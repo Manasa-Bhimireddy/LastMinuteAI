@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Tutor Chatbot</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <!-- Marked for markdown formatting -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h2>AI Academic Chat Tutor</h2>
+            <button onclick="clearHistory()" class="clear-btn">Clear Chat</button>
+        </div>
+        
+        <div class="chat-messages" id="chat-box">
+            <div class="message bot-message">
+                <div class="bubble">Hello! I am your AI Academic Tutor. How can I help you with your studies or code today?</div>
+            </div>
+        </div>
+        
+        <form id="chat-form" class="input-area">
+            <input type="text" id="user-input" placeholder="Ask a study question..." required>
+            <button type="submit">Send</button>
+        </form>
+    </div>
+
+    <script>
+        const chatBox = document.getElementById("chat-box");
+        const chatForm = document.getElementById("chat-form");
+        const userInput = document.getElementById("user-input");
+        let chatHistory = []; // Format: { role: 'user'|'assistant', content: string }
+
+        chatForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const message = userInput.value.trim();
+            if (!message) return;
+            
+            userInput.value = "";
+            appendMessage("user", message);
+            
+            const loadingBubble = appendMessage("bot", '<div class="typing-indicator"><span></span><span></span><span></span></div>');
+            
+            try {
+                const res = await fetch("/api/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message: message, history: chatHistory })
+                });
+                const data = await res.json();
+                
+                loadingBubble.remove();
+                
+                if (data.response) {
+                    appendMessage("bot", data.response, true);
+                    chatHistory.push({ role: "user", content: message });
+                    chatHistory.push({ role: "assistant", content: data.response });
+                } else {
+                    appendMessage("bot", "Error: " + (data.error || "Failed to get reply."));
+                }
+            } catch (err) {
+                loadingBubble.remove();
+                appendMessage("bot", "Network error connecting to chat service.");
+            }
+        });
+
+        function appendMessage(sender, text, isMarkdown = false) {
+            const wrapper = document.createElement("div");
+            wrapper.className = `message ${sender === 'user' ? 'user-message' : 'bot-message'}`;
+            
+            const bubble = document.createElement("div");
+            bubble.className = "bubble";
+            
+            if (isMarkdown) {
+                bubble.innerHTML = marked.parse(text);
+            } else {
+                bubble.innerHTML = text;
+            }
+            
+            wrapper.appendChild(bubble);
+            chatBox.appendChild(wrapper);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return wrapper;
+        }
+
+        function clearHistory() {
+            chatHistory = [];
+            chatBox.innerHTML = `
+                <div class="message bot-message">
+                    <div class="bubble">History cleared. What are we studying next?</div>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

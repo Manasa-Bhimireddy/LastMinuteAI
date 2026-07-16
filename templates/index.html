@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LastMinute.AI - Unified Student Learning Portal</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Marked.js (Markdown Renderer) -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="dark-theme">
+
+  <!-- Floating Background Blobs -->
+  <div class="blob-bg-container">
+    <div class="blob blob-indigo"></div>
+    <div class="blob blob-purple"></div>
+    <div class="blob blob-cyan"></div>
+  </div>
+
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <i data-lucide="graduation-cap" class="logo-icon"></i>
+          <span>LastMinute <span class="accent-text">.AI</span></span>
+        </div>
+      </div>
+      
+      <nav class="sidebar-menu">
+        <button class="menu-item active" data-tab="dashboard">
+          <i data-lucide="layout-dashboard"></i>
+          <span>Dashboard</span>
+        </button>
+        <button class="menu-item" data-tab="resume-gap">
+          <i data-lucide="file-check"></i>
+          <span>Resume & Skill Gap</span>
+        </button>
+        <button class="menu-item" data-tab="study-assistant">
+          <i data-lucide="calendar"></i>
+          <span>Study Assistant</span>
+        </button>
+        <button class="menu-item" data-tab="document-qa">
+          <i data-lucide="file-text"></i>
+          <span>Document QA (RAG)</span>
+        </button>
+        <button class="menu-item" data-tab="tutor-chatbot">
+          <i data-lucide="message-square"></i>
+          <span>AI Tutor Chatbot</span>
+        </button>
+        <button class="menu-item" data-tab="settings">
+          <i data-lucide="settings"></i>
+          <span>Settings</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="api-status-badge missing" id="api-status-indicator">
+          <i data-lucide="alert-circle" id="api-status-icon"></i>
+          <span id="api-status-text">LLM Offline</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Top Navbar -->
+      <header class="top-navbar">
+        <div class="panel-info">
+          <h1 id="current-panel-title">Dashboard</h1>
+          <p id="current-panel-subtitle">Welcome back, Student! Here is your learning progress.</p>
+        </div>
+        <div class="user-profile">
+          <div class="avatar">S</div>
+          <span class="user-name">Guest Student</span>
+        </div>
+      </header>
+
+      <!-- Panel Content Container -->
+      <div class="panel-container">
+        
+        <!-- DASHBOARD PANEL -->
+        <section class="tab-panel active" id="panel-dashboard">
+          <div class="welcome-banner">
+            <div class="welcome-text">
+              <h2 class="typing-header">Achieve <span id="typing-text">Academic Excellence</span><span class="typing-cursor">|</span></h2>
+              <p>Upload your resume to check alignment with internships, use RAG to query study documents, or generate a customized study plan with integrated quizzes.</p>
+              <button class="btn btn-primary" onclick="switchTab('resume-gap')">Analyze Resume Now</button>
+            </div>
+            <div class="welcome-graphic">
+              <i data-lucide="sparkles" class="floating-sparkle"></i>
+            </div>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon purple"><i data-lucide="target"></i></div>
+              <div class="stat-data">
+                <span class="stat-value" id="dash-ats-score">0%</span>
+                <span class="stat-label">Avg. ATS Match</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon blue"><i data-lucide="folder-open"></i></div>
+              <div class="stat-data">
+                <span class="stat-value" id="dash-docs-count">0</span>
+                <span class="stat-label">Indexed Documents</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon green"><i data-lucide="award"></i></div>
+              <div class="stat-data">
+                <span class="stat-value" id="dash-skills-count">0</span>
+                <span class="stat-label">Skills Detected</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon orange"><i data-lucide="check-circle-2"></i></div>
+              <div class="stat-data">
+                <span class="stat-value" id="dash-quizzes-count">0</span>
+                <span class="stat-label">Quizzes Completed</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-grid">
+            <div class="glass-card grid-col-2">
+              <h3>Quick Actions</h3>
+              <div class="quick-actions-list">
+                <div class="action-item" onclick="switchTab('resume-gap')">
+                  <div class="action-icon"><i data-lucide="file-check-2"></i></div>
+                  <div class="action-info">
+                    <h4>Analyze Skill Gap</h4>
+                    <p>Compare resume with job descriptions to discover missing skills.</p>
+                  </div>
+                </div>
+                <div class="action-item" onclick="switchTab('document-qa')">
+                  <div class="action-icon"><i data-lucide="text-quote"></i></div>
+                  <div class="action-info">
+                    <h4>Upload Study Notes</h4>
+                    <p>Ask questions directly related to your class documents using AI RAG.</p>
+                  </div>
+                </div>
+                <div class="action-item" onclick="switchTab('study-assistant')">
+                  <div class="action-icon"><i data-lucide="calendar-days"></i></div>
+                  <div class="action-info">
+                    <h4>Generate Study Plan</h4>
+                    <p>Design a structured roadmap for your exams or desired career roles.</p>
+                  </div>
+                </div>
+                <div class="action-item" onclick="switchTab('tutor-chatbot')">
+                  <div class="action-icon"><i data-lucide="bot"></i></div>
+                  <div class="action-info">
+                    <h4>Ask AI Academic Tutor</h4>
+                    <p>Instant answers to homework, concepts, or programming challenges.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="glass-card">
+              <h3>Active Target Goals</h3>
+              <div class="target-goals-list" id="dashboard-goals-list">
+                <div class="empty-state">
+                  <i data-lucide="plus-circle" class="empty-icon"></i>
+                  <p>No goals set. Generate a Study Plan to start tracking!</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- RESUME & SKILL GAP PANEL -->
+        <section class="tab-panel" id="panel-resume-gap">
+          <div class="dashboard-grid">
+            <!-- Left inputs card -->
+            <div class="glass-card">
+              <h3>Skill Gap Analyzer</h3>
+              <p class="section-desc">Upload your resume and paste a target job description to run an ATS scan.</p>
+              
+              <form id="resume-analysis-form" class="standard-form">
+                <div class="form-group">
+                  <label>Target Job / Internship Description</label>
+                  <textarea id="job-description-input" placeholder="Paste the job description or requirements here..." required></textarea>
+                </div>
+                
+                <div class="form-group">
+                  <label>Upload Resume (PDF or DOCX)</label>
+                  <div class="file-drag-area" id="resume-drag-area">
+                    <i data-lucide="file-up" class="upload-arrow-icon"></i>
+                    <p>Drag and drop your file here, or <span class="file-browse-btn">browse</span></p>
+                    <input type="file" id="resume-file-input" accept=".pdf,.docx" style="display: none;" required />
+                    <div id="selected-resume-name" class="selected-filename" style="display: none;"></div>
+                  </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary btn-full-width" id="analyze-resume-btn">
+                  <span id="analyze-btn-text">Analyze Skill Alignment</span>
+                  <div class="spinner" id="analyze-btn-spinner" style="display: none;"></div>
+                </button>
+              </form>
+            </div>
+
+            <!-- Right results card -->
+            <div class="glass-card grid-col-2" id="resume-results-container">
+              <div class="empty-state-large" id="resume-empty-state">
+                <i data-lucide="shield-check" class="empty-icon"></i>
+                <h3>Ready to Analyze</h3>
+                <p>Submit your resume and target description on the left to see the match details, missing skills, and customized study roadmap.</p>
+              </div>
+              
+              <div class="analysis-results" id="resume-results-view" style="display: none;">
+                <div class="score-header-box">
+                  <div class="ats-circle-gauge">
+                    <svg viewBox="0 0 36 36" class="circular-chart">
+                      <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                      <path class="circle" id="ats-score-circle" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                      <text x="18" y="20.35" class="percentage" id="ats-score-text">0%</text>
+                    </svg>
+                  </div>
+                  <div class="score-meta">
+                    <h4>ATS Match Rating</h4>
+                    <p id="ats-score-label">Suboptimal Match</p>
+                    <div class="badges-row">
+                      <span class="skill-badge-count green" id="matched-skills-count">0 Matched</span>
+                      <span class="skill-badge-count orange" id="missing-skills-count">0 Missing</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="skills-breakdown-row">
+                  <div class="skills-column">
+                    <h5>Matched Skills</h5>
+                    <div class="skills-tag-container" id="matched-skills-tags"></div>
+                  </div>
+                  <div class="skills-column">
+                    <h5>Missing Skills (Skill Gap)</h5>
+                    <div class="skills-tag-container" id="missing-skills-tags"></div>
+                  </div>
+                </div>
+
+                <div class="roadmap-box">
+                  <h5>AI Learning Roadmap & Suggestions</h5>
+                  <div class="markdown-body" id="analysis-suggestions-markdown"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- STUDY ASSISTENT PANEL -->
+        <section class="tab-panel" id="panel-study-assistant">
+          <div class="tab-subnav">
+            <button class="sub-tabactive" data-subtab="planner">Study Planner</button>
+            <button class="" data-subtab="quiz">Practice Quizzes & Cards</button>
+          </div>
+
+          <!-- Planner Subtab -->
+          <div class="subtab-content" id="subtab-planner">
+            <div class="dashboard-grid">
+              <div class="glass-card">
+                <h3>Generate Personalized Study Plan</h3>
+                <p class="section-desc">Create a customized, weekly study roadmap designed around your specific objectives and timeline.</p>
+                
+                <form id="study-plan-form" class="standard-form">
+                  <div class="form-group">
+                    <label>Target Goal / Role / Subject</label>
+                    <input type="text" id="plan-target" placeholder="e.g., Python Developer, Data Science Internship, Deep Learning Exam" required />
+                  </div>
+                  
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label>Duration (Weeks)</label>
+                      <select id="plan-duration">
+                        <option value="2">2 Weeks (Crash Course)</option>
+                        <option value="4" selected>4 Weeks (Standard)</option>
+                        <option value="8">8 Weeks (Comprehensive)</option>
+                        <option value="12">12 Weeks (Deep Dive)</option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label>Hours per Week</label>
+                      <input type="number" id="plan-hours" value="10" min="2" max="60" required />
+                    </div>
+                  </div>
+
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label>Current Skill Level</label>
+                      <select id="plan-level">
+                        <option value="Beginner" selected>Beginner (No prior exposure)</option>
+                        <option value="Intermediate">Intermediate (Some foundation)</option>
+                        <option value="Advanced">Advanced (Looking to specialize)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label>Skills you already know (Optional)</label>
+                    <input type="text" id="plan-current-skills" placeholder="e.g., Basic Python, HTML, basic SQL" />
+                  </div>
+
+                  <button type="submit" class="btn btn-primary btn-full-width" id="generate-plan-btn">
+                    <span id="plan-btn-text">Generate Study Plan</span>
+                    <div class="spinner" id="plan-btn-spinner" style="display: none;"></div>
+                  </button>
+                </form>
+              </div>
+
+              <div class="glass-card grid-col-2">
+                <div class="empty-state-large" id="plan-empty-state">
+                  <i data-lucide="calendar" class="empty-icon"></i>
+                  <h3>Weekly Roadmap View</h3>
+                  <p>Fill out the profile on the left to generate your custom week-by-week academic scheduler.</p>
+                </div>
+                
+                <div class="plan-display" id="plan-display-view" style="display: none;">
+                  <div class="plan-actions-header">
+                    <h4 id="plan-view-title">Study Plan Details</h4>
+                    <button class="btn btn-secondary btn-sm" id="save-plan-to-dash-btn">
+                      <i data-lucide="plus"></i> Pin to Dashboard
+                    </button>
+                  </div>
+                  <div class="markdown-body" id="plan-markdown-content"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quiz Subtab -->
+          <div class="subtab-content" id="subtab-quiz" style="display: none;">
+            <div class="dashboard-grid">
+              <div class="glass-card">
+                <h3>Quiz & Flashcard Generator</h3>
+                <p class="section-desc">Test your knowledge! Enter any subject or skill gap area to auto-generate interactive study aids.</p>
+                
+                <form id="quiz-generation-form" class="standard-form">
+                  <div class="form-group">
+                    <label>Subject / Topic to Test</label>
+                    <input type="text" id="quiz-topic-input" placeholder="e.g., Neural Networks, SQL Joins, HTML DOM, etc." required />
+                  </div>
+                  <button type="submit" class="btn btn-primary btn-full-width" id="generate-quiz-btn">
+                    <span id="quiz-btn-text">Generate Practice Quiz</span>
+                    <div class="spinner" id="quiz-btn-spinner" style="display: none;"></div>
+                  </button>
+                </form>
+                
+                <div class="flashcards-section-wrapper" id="flashcards-section" style="display: none; margin-top: 30px;">
+                  <h4>Study Flashcards</h4>
+                  <div class="flashcard-container" id="flashcard-deck">
+                    <div class="flashcard" onclick="flipFlashcard(this)">
+                      <div class="flashcard-face flashcard-front">
+                        <div class="flashcard-header">Question</div>
+                        <div class="flashcard-content" id="fc-front-content">Front Content</div>
+                        <div class="flashcard-footer">Click to Flip</div>
+                      </div>
+                      <div class="flashcard-face flashcard-back">
+                        <div class="flashcard-header">Explanation</div>
+                        <div class="flashcard-content" id="fc-back-content">Back Content</div>
+                        <div class="flashcard-footer">Click to Flip</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flashcard-navigation">
+                    <button class="btn btn-icon" onclick="prevFlashcard()"><i data-lucide="chevron-left"></i></button>
+                    <span id="flashcard-counter">1 of 5</span>
+                    <button class="btn btn-icon" onclick="nextFlashcard()"><i data-lucide="chevron-right"></i></button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Interactive Quiz Panel -->
+              <div class="glass-card grid-col-2">
+                <div class="empty-state-large" id="quiz-empty-state">
+                  <i data-lucide="help-circle" class="empty-icon"></i>
+                  <h3>Start Self-Assessment</h3>
+                  <p>Generate a quiz on the left to launch an interactive, multiple-choice practice session.</p>
+                </div>
+                
+                <div class="quiz-interface" id="quiz-interface-view" style="display: none;">
+                  <div class="quiz-header">
+                    <h4 id="quiz-topic-title">Quiz Topic</h4>
+                    <div class="quiz-progress-bar">
+                      <div class="quiz-progress-fill" id="quiz-progress-fill" style="width: 0%;"></div>
+                    </div>
+                    <span id="quiz-progress-label">Question 1 of 5</span>
+                  </div>
+
+                  <div class="quiz-question-box">
+                    <h3 id="quiz-question-text">Question goes here?</h3>
+                    <div class="quiz-options-list" id="quiz-options-container">
+                      <!-- Rendered by JS -->
+                    </div>
+                  </div>
+
+                  <div class="quiz-navigation">
+                    <button class="btn btn-primary" id="quiz-next-btn" style="display: none;" onclick="advanceQuiz()">Next Question</button>
+                  </div>
+
+                  <div class="quiz-explanation-box" id="quiz-explanation-container" style="display: none;">
+                    <div class="explanation-icon" id="explanation-status-icon"><i data-lucide="check-circle"></i></div>
+                    <div class="explanation-text">
+                      <h5 id="explanation-title">Correct!</h5>
+                      <p id="explanation-body">Explanation content goes here.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Quiz Results screen -->
+                <div class="quiz-results-screen" id="quiz-results-view" style="display: none;">
+                  <i data-lucide="trophy" class="trophy-icon"></i>
+                  <h2>Quiz Completed!</h2>
+                  <p>You scored <span class="score-highlight" id="quiz-final-score">4/5</span></p>
+                  <p class="results-feedback" id="quiz-results-feedback">Excellent job! You have a solid grasp on this topic.</p>
+                  <button class="btn btn-primary" onclick="restartQuiz()">Retake Quiz</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- DOCUMENT QA (RAG) PANEL -->
+        <section class="tab-panel" id="panel-document-qa">
+          <div class="dashboard-grid">
+            <!-- Left panel: File uploader and active list -->
+            <div class="glass-card">
+              <h3>Indexed Course Materials</h3>
+              <p class="section-desc">Upload textbooks, presentation slides, or lecture notes. Our AI indexes them locally for precise RAG question answering.</p>
+              
+              <div class="file-drag-area" id="doc-drag-area" style="margin-bottom: 20px;">
+                <i data-lucide="file-text" class="upload-arrow-icon"></i>
+                <p>Upload PDF, DOCX, or TXT study guide</p>
+                <input type="file" id="doc-file-input" accept=".pdf,.docx,.txt" style="display: none;" />
+                <div id="uploading-doc-spinner" class="spinner" style="display: none; margin: 10px auto;"></div>
+              </div>
+              
+              <div class="active-documents-list-section">
+                <h5>Uploaded Study Files</h5>
+                <div class="docs-list" id="uploaded-docs-list">
+                  <div class="empty-docs-placeholder">No documents uploaded yet.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right panel: Document QA Chat -->
+            <div class="glass-card grid-col-2">
+              <div class="doc-qa-wrapper">
+                <div class="doc-qa-header">
+                  <div class="doc-title-bar">
+                    <i data-lucide="library"></i>
+                    <span id="active-document-title">No Document Selected</span>
+                  </div>
+                  <span class="rag-indicator status-disabled" id="rag-badge">RAG Offline</span>
+                </div>
+                
+                <!-- Chat window -->
+                <div class="doc-chat-window" id="doc-chat-messages">
+                  <div class="chat-placeholder">
+                    <i data-lucide="help-circle"></i>
+                    <h3>Ask Your Study Material</h3>
+                    <p>Select an uploaded document on the left and type a question. The AI will extract relevant context passages from your file to formulate accurate answers.</p>
+                  </div>
+                </div>
+                
+                <!-- Input container -->
+                <form id="doc-chat-input-form" class="chat-input-container">
+                  <input type="text" id="doc-chat-input" placeholder="Enter a question about the active document..." disabled required />
+                  <button type="submit" class="btn btn-primary btn-icon" id="doc-chat-send-btn" disabled>
+                    <i data-lucide="send"></i>
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- AI TUTOR CHATBOT PANEL -->
+        <section class="tab-panel" id="panel-tutor-chatbot">
+          <div class="chatbot-wrapper">
+            <div class="chatbot-header">
+              <div class="tutor-info">
+                <div class="tutor-avatar"><i data-lucide="bot"></i></div>
+                <div>
+                  <h4>LastMinute Academic Tutor</h4>
+                  <p class="status-online"><span class="pulse-dot"></span> Ready to help</p>
+                </div>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="clearChatHistory()">
+                <i data-lucide="rotate-ccw"></i> Clear Chat
+              </button>
+            </div>
+            
+            <div class="chat-window" id="chatbot-messages">
+              <div class="message model-message">
+                <div class="message-content">
+                  <p>Hi there! I am your <strong>LastMinute Academic Tutor</strong>. Feel free to ask me any educational questions. I can:</p>
+                  <ul>
+                    <li>Explain complex science or mathematics concepts.</li>
+                    <li>Help write, debug, or explain computer code.</li>
+                    <li>Brainstorm topics for research essays.</li>
+                    <li>Give tips on exam preparation and study habits.</li>
+                  </ul>
+                  <p>What are we studying today?</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Quick Suggestions Row -->
+            <div class="chat-chips-row">
+              <button class="chat-chip" onclick="sendQuickPrompt('Explain Time Complexity (Big O Notation) simply.')">Explain Big O</button>
+              <button class="chat-chip" onclick="sendQuickPrompt('Write a python function to perform binary search.')">Python Binary Search</button>
+              <button class="chat-chip" onclick="sendQuickPrompt('How do cellular mitochondria produce ATP?')">ATP Production</button>
+              <button class="chat-chip" onclick="sendQuickPrompt('Give me 5 tips to stay focused during long study sessions.')">Study Tips</button>
+            </div>
+            
+            <form id="tutor-chat-input-form" class="chat-input-container">
+              <input type="text" id="tutor-chat-input" placeholder="Ask your academic question here..." required />
+              <button type="submit" class="btn btn-primary btn-icon" id="tutor-chat-send-btn">
+                <i data-lucide="send"></i>
+              </button>
+            </form>
+          </div>
+        </section>
+
+        <!-- SETTINGS PANEL -->
+        <section class="tab-panel" id="panel-settings">
+          <div class="settings-container glass-card">
+            <h3>Configuration & API Settings</h3>
+            <p class="section-desc">Set up your API credentials to unlock all the interactive features of EduSphere AI.</p>
+            
+            <div class="settings-card">
+              <h4><i data-lucide="key" class="settings-card-icon"></i> LLM API Configuration</h4>
+              <p>EduSphere AI supports both <strong>Groq</strong> (extremely fast Llama models) and <strong>Google Gemini</strong>. Save your key below to activate the platform.</p>
+              
+              <form id="settings-key-form" class="standard-form">
+                <div class="form-group">
+                  <label>API Provider</label>
+                  <select id="settings-provider-select">
+                    <option value="groq" selected>Groq (Llama 3.3 Flagship)</option>
+                    <option value="gemini">Google Gemini (Gemini 1.5 Flash)</option>
+                  </select>
+                </div>
+                
+                <div class="form-group">
+                  <label id="key-input-label">Groq API Key</label>
+                  <div class="input-password-wrapper">
+                    <input type="password" id="api-key-input" placeholder="Paste your API key here..." required />
+                    <button type="button" class="btn-toggle-password" onclick="togglePasswordVisibility('api-key-input')">
+                      <i data-lucide="eye" id="toggle-eye-icon"></i>
+                    </button>
+                  </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary" id="save-key-btn">Save API Key</button>
+              </form>
+              
+              <div class="key-help-box">
+                <h5>How to obtain a key:</h5>
+                <ul style="list-style: none; margin-left: 0; padding-left: 0; font-size: 0.85rem; color: var(--text-secondary);">
+                  <li style="margin-bottom: 12px; line-height: 1.4;">
+                    <strong>Groq Key:</strong> Go to the <a href="https://console.groq.com/" target="_blank" class="external-link">Groq Console <i data-lucide="external-link" class="link-inline-icon"></i></a>, navigate to API Keys, and generate a key starting with <code>gsk_</code>.
+                  </li>
+                  <li style="line-height: 1.4;">
+                    <strong>Gemini Key:</strong> Go to <a href="https://aistudio.google.com/" target="_blank" class="external-link">Google AI Studio <i data-lucide="external-link" class="link-inline-icon"></i></a>, click "Get API Key", and create one.
+                  </li>
+                </ul>
+                <p class="info-alert" style="margin-top: 16px;">
+                  <i data-lucide="info"></i>
+                  <span>Your API key is saved locally in a secure `.env` file within the application directory, so you only have to configure it once.</span>
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Toast notification container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- External JS Logic -->
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

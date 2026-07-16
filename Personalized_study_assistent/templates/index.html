@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Study Assistant</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>AI Study Assistant</h1>
+        
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('planner')">Study Planner</button>
+            <button class="tab-btn" onclick="switchTab('quiz')">Quizzes & Flashcards</button>
+        </div>
+        
+        <!-- Planner Section -->
+        <div id="planner-section" class="tab-content active">
+            <form id="planner-form" class="standard-form">
+                <div class="form-group">
+                    <label>Target Goal / Topic</label>
+                    <input type="text" id="plan-topic" placeholder="e.g. Deep Learning, Data Analytics, Python" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Duration (Weeks)</label>
+                        <select id="plan-duration">
+                            <option value="2">2 Weeks</option>
+                            <option value="4" selected>4 Weeks</option>
+                            <option value="8">8 Weeks</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Hours/Week</label>
+                        <input type="number" id="plan-hours" value="10" min="2" max="60" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn">Generate Study Plan</button>
+            </form>
+            
+            <div id="plan-result" class="result-box" style="display:none;">
+                <h2>Your Personalized Weekly Planner</h2>
+                <div id="plan-content" class="markdown-body"></div>
+            </div>
+        </div>
+        
+        <!-- Quiz Section -->
+        <div id="quiz-section" class="tab-content">
+            <form id="quiz-form" class="standard-form">
+                <div class="form-group">
+                    <label>Subject to Test</label>
+                    <input type="text" id="quiz-topic" placeholder="e.g. Neural Networks, Python loops" required>
+                </div>
+                <button type="submit" class="btn">Generate Test & Flashcards</button>
+            </form>
+            
+            <div id="quiz-loading" style="display:none; text-align:center; margin: 20px;">Generating study aids...</div>
+            
+            <div id="quiz-result-area" style="display:none;">
+                <div class="card quiz-card">
+                    <h2>Interactive Practice Quiz</h2>
+                    <div id="quiz-question-box">
+                        <h3 id="mcq-question">Question text</h3>
+                        <div id="mcq-options" class="options-list"></div>
+                        <div id="mcq-feedback" class="feedback-box" style="display:none;"></div>
+                        <button id="next-mcq-btn" class="btn" style="display:none; margin-top: 15px;" onclick="nextQuestion()">Next Question</button>
+                    </div>
+                    <div id="quiz-score-box" style="display:none; text-align:center;">
+                        <h3>Quiz Completed!</h3>
+                        <p>Score: <span id="final-score">0/5</span></p>
+                        <button class="btn" onclick="restartQuiz()">Retake Quiz</button>
+                    </div>
+                </div>
+                
+                <div class="card flashcard-card">
+                    <h2>Study Flashcards</h2>
+                    <div class="flashcard" onclick="this.classList.toggle('flipped')">
+                        <div class="flashcard-face front" id="fc-front">Front</div>
+                        <div class="flashcard-face back" id="fc-back">Back</div>
+                    </div>
+                    <div class="fc-nav">
+                        <button class="btn btn-sm" onclick="prevFlashcard()">Prev</button>
+                        <span id="fc-counter">1 of 5</span>
+                        <button class="btn btn-sm" onclick="nextFlashcard()">Next</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab switching
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(`${tabId}-section`).classList.add('active');
+        }
+
+        // Planner submission
+        const plannerForm = document.getElementById("planner-form");
+        plannerForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const topic = document.getElementById("plan-topic").value.trim();
+            const duration = document.getElementById("plan-duration").value;
+            const hours = document.getElementById("plan-hours").value;
+            
+            const btn = plannerForm.querySelector("button");
+            btn.innerText = "Generating Plan...";
+            btn.disabled = true;
+            
+            document.getElementById("plan-result").style.display = "none";
+            
+            try {
+                const res = await fetch("/api/plan", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ topic, duration, hours })
+                });
+                const data = await res.json();
+                
+                if (data.plan) {
+                    document.getElementById("plan-content").innerHTML = marked.parse(data.plan);
+                    document.getElementById("plan-result").style.display = "block";
+                } else {
+                    alert("Error: " + (data.error || "Failed to generate plan"));
+                }
+            } catch (err) {
+                alert("Failed to connect to planner API.");
+            } finally {
+                btn.innerText = "Generate Study Plan";
+                btn.disabled = false;
+            }
+        });
+
+        // Quiz State
+        let mcqs = [];
+        let flashcards = [];
+        let currentMCQIdx = 0;
+        let score = 0;
+        let currentFCIdx = 0;
+
+        const quizForm = document.getElementById("quiz-form");
+        quizForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const topic = document.getElementById("quiz-topic").value.trim();
+            
+            const btn = quizForm.querySelector("button");
+            btn.disabled = true;
+            document.getElementById("quiz-loading").style.display = "block";
+            document.getElementById("quiz-result-area").style.display = "none";
+            
+            try {
+                const res = await fetch("/api/quiz", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ topic })
+                });
+                const data = await res.json();
+                
+                document.getElementById("quiz-loading").style.display = "none";
+                
+                if (data.mcqs && data.flashcards) {
+                    mcqs = data.mcqs;
+                    flashcards = data.flashcards;
+                    currentMCQIdx = 0;
+                    score = 0;
+                    currentFCIdx = 0;
+                    
+                    document.getElementById("quiz-result-area").style.display = "block";
+                    document.getElementById("quiz-question-box").style.display = "block";
+                    document.getElementById("quiz-score-box").style.display = "none";
+                    
+                    renderMCQ();
+                    renderFlashcard();
+                } else {
+                    alert("Error: " + (data.error || "Failed to generate quiz"));
+                }
+            } catch (err) {
+                document.getElementById("quiz-loading").style.display = "none";
+                alert("Failed to connect to quiz API.");
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        function renderMCQ() {
+            const mcq = mcqs[currentMCQIdx];
+            document.getElementById("mcq-question").innerText = mcq.question;
+            document.getElementById("mcq-feedback").style.display = "none";
+            document.getElementById("next-mcq-btn").style.display = "none";
+            
+            const container = document.getElementById("mcq-options");
+            container.innerHTML = "";
+            
+            mcq.options.forEach((opt, idx) => {
+                const item = document.createElement("div");
+                item.className = "option";
+                item.innerText = opt;
+                item.onclick = () => selectOption(idx, item);
+                container.appendChild(item);
+            });
+        }
+
+        function selectOption(selectedIdx, el) {
+            const mcq = mcqs[currentMCQIdx];
+            const correct = mcq.answer_idx;
+            const options = document.querySelectorAll(".option");
+            
+            options.forEach(o => o.classList.add("disabled"));
+            
+            const feedback = document.getElementById("mcq-feedback");
+            feedback.style.display = "block";
+            feedback.innerHTML = `<strong>${selectedIdx === correct ? 'Correct Answer!' : 'Incorrect'}</strong><br>${mcq.explanation}`;
+            
+            if (selectedIdx === correct) {
+                el.classList.add("correct");
+                score++;
+            } else {
+                el.classList.add("incorrect");
+                options[correct].classList.add("correct");
+            }
+            
+            document.getElementById("next-mcq-btn").style.display = "block";
+        }
+
+        function nextQuestion() {
+            currentMCQIdx++;
+            if (currentMCQIdx < mcqs.length) {
+                renderMCQ();
+            } else {
+                document.getElementById("quiz-question-box").style.display = "none";
+                document.getElementById("quiz-score-box").style.display = "block";
+                document.getElementById("final-score").innerText = `${score} / ${mcqs.length}`;
+            }
+        }
+
+        function restartQuiz() {
+            currentMCQIdx = 0;
+            score = 0;
+            document.getElementById("quiz-question-box").style.display = "block";
+            document.getElementById("quiz-score-box").style.display = "none";
+            renderMCQ();
+        }
+
+        // Flashcards
+        function renderFlashcard() {
+            const fc = flashcards[currentFCIdx];
+            document.querySelector(".flashcard").classList.remove("flipped");
+            document.getElementById("fc-front").innerText = fc.front;
+            document.getElementById("fc-back").innerText = fc.back;
+            document.getElementById("fc-counter").innerText = `${currentFCIdx + 1} of ${flashcards.length}`;
+        }
+
+        function nextFlashcard() {
+            currentFCIdx = (currentFCIdx + 1) % flashcards.length;
+            renderFlashcard();
+        }
+
+        function prevFlashcard() {
+            currentFCIdx = (currentFCIdx - 1 + flashcards.length) % flashcards.length;
+            renderFlashcard();
+        }
+    </script>
+</body>
+</html>

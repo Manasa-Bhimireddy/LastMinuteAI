@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Document QA</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>RAG Document QA (Vector DB Search)</h1>
+        
+        <div class="upload-section">
+            <label>Upload Study Material (PDF/DOCX/TXT)</label>
+            <input type="file" id="file-input" accept=".pdf,.docx,.txt">
+            <button onclick="uploadDocument()" id="upload-btn" class="btn btn-sm">Index Document</button>
+            <div id="upload-status" style="margin-top: 10px; font-size: 0.9rem; color: var(--text-secondary);"></div>
+        </div>
+        
+        <div id="qa-section" class="card" style="display:none; margin-top: 25px;">
+            <h2>Ask Your Indexed Document</h2>
+            <p id="indexed-filename" style="font-size: 0.85rem; color: var(--success); margin-bottom: 20px;"></p>
+            
+            <div class="chat-box" id="chat-box"></div>
+            
+            <form id="query-form" class="query-area">
+                <input type="text" id="query-input" placeholder="Type a question about the document..." required>
+                <button type="submit" class="btn">Ask</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let activeDocId = null;
+        let activeFilename = "";
+
+        async function uploadDocument() {
+            const fileInput = document.getElementById("file-input");
+            if (fileInput.files.length === 0) {
+                alert("Please choose a file first.");
+                return;
+            }
+            
+            const btn = document.getElementById("upload-btn");
+            const status = document.getElementById("upload-status");
+            
+            btn.disabled = true;
+            btn.innerText = "Indexing File...";
+            status.innerText = "Extracting text and generating FAISS vector store...";
+            
+            const formData = new FormData();
+            formData.append("document", fileInput.files[0]);
+            
+            try {
+                const res = await fetch("/api/upload", {
+                    method: "POST",
+                    body: formData
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    activeDocId = data.document_id;
+                    activeFilename = data.filename;
+                    
+                    status.innerText = `Successfully indexed "${data.filename}" (${data.chunk_count} chunks).`;
+                    document.getElementById("indexed-filename").innerText = `Active Document: ${data.filename}`;
+                    document.getElementById("qa-section").style.display = "block";
+                    document.getElementById("chat-box").innerHTML = "";
+                } else {
+                    status.innerText = "Error: " + (data.error || "Failed to parse document.");
+                }
+            } catch (err) {
+                status.innerText = "Failed to communicate with RAG server.";
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Index Document";
+            }
+        }
+
+        const queryForm = document.getElementById("query-form");
+        queryForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const input = document.getElementById("query-input");
+            const query = input.value.trim();
+            if (!query || !activeDocId) return;
+            
+            input.value = "";
+            appendMessage("user", query);
+            
+            const loadingBubble = appendMessage("bot", "Searching FAISS vector space and generating response...");
+            
+            try {
+                const res = await fetch("/api/query", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ document_id: activeDocId, question: query })
+                });
+                const data = await res.json();
+                
+                loadingBubble.remove();
+                
+                if (data.success) {
+                    appendMessage("bot", data.answer);
+                } else {
+                    appendMessage("bot", "Error: " + (data.error || "Failed to search document context."));
+                }
+            } catch (err) {
+                loadingBubble.remove();
+                appendMessage("bot", "Network error communicating with search model.");
+            }
+        });
+
+        function appendMessage(sender, text) {
+            const box = document.getElementById("chat-box");
+            const wrapper = document.createElement("div");
+            wrapper.className = `message ${sender}-message`;
+            wrapper.innerText = text;
+            box.appendChild(wrapper);
+            box.scrollTop = box.scrollHeight;
+            return wrapper;
+        }
+    </script>
+</body>
+</html>

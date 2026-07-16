@@ -1,0 +1,29 @@
+# API Keys and sensitive credentials
+.env
+*/.env
+
+# Virtual Environments
+venv/
+*/venv/
+.venv/
+*/.venv/
+ENV/
+
+# Python caching
+__pycache__/
+*/__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary uploads and indexed databases
+uploads/
+*/uploads/
+faiss_index/
+*/faiss_index/
+faiss_index_*
+*/faiss_index_*
+
+# IDE specific settings
+.vscode/
+.idea/
+.DS_Store
