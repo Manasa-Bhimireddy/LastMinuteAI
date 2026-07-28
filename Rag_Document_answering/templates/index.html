@@ -11,28 +11,113 @@
         <h1>RAG Document QA (Vector DB Search)</h1>
         
         <div class="upload-section">
-            <label>Upload Study Material (PDF/DOCX/TXT)</label>
-            <input type="file" id="file-input" accept=".pdf,.docx,.txt">
+            <label>Upload Study Material (PDF/DOCX/TXT/PNG/JPG/JPEG)</label>
+            <input type="file" id="file-input" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg">
             <button onclick="uploadDocument()" id="upload-btn" class="btn btn-sm">Index Document</button>
             <div id="upload-status" style="margin-top: 10px; font-size: 0.9rem; color: var(--text-secondary);"></div>
         </div>
+
+        <div class="card" style="margin-top: 20px; padding: 15px;">
+            <h3>Indexed Course Documents</h3>
+            <div id="uploaded-docs-list" style="display:flex; flex-direction:column; gap:10px; margin-top: 10px;">
+                <p style="color:var(--text-secondary); font-size:0.9rem;">No files uploaded yet.</p>
+            </div>
+        </div>
         
         <div id="qa-section" class="card" style="display:none; margin-top: 25px;">
-            <h2>Ask Your Indexed Document</h2>
+            <h2>Ask Your Indexed Documents</h2>
             <p id="indexed-filename" style="font-size: 0.85rem; color: var(--success); margin-bottom: 20px;"></p>
             
             <div class="chat-box" id="chat-box"></div>
             
             <form id="query-form" class="query-area">
-                <input type="text" id="query-input" placeholder="Type a question about the document..." required>
+                <input type="text" id="query-input" placeholder="Type a question about the documents..." required>
                 <button type="submit" class="btn">Ask</button>
             </form>
         </div>
     </div>
 
     <script>
-        let activeDocId = null;
-        let activeFilename = "";
+        let uploadedDocuments = [];
+        let activeDocumentIds = [];
+
+        window.addEventListener("DOMContentLoaded", () => {
+            loadDocuments();
+        });
+
+        async function loadDocuments() {
+            try {
+                const res = await fetch("/api/documents");
+                const data = await res.json();
+                if (data.success) {
+                    uploadedDocuments = data.documents;
+                    renderDocsList();
+                }
+            } catch (err) {
+                console.error("Failed to load documents:", err);
+            }
+        }
+
+        function renderDocsList() {
+            const list = document.getElementById("uploaded-docs-list");
+            list.innerHTML = "";
+            
+            if (uploadedDocuments.length === 0) {
+                list.innerHTML = '<p style="color:var(--text-secondary); font-size:0.9rem;">No files uploaded yet.</p>';
+                document.getElementById("qa-section").style.display = "none";
+                return;
+            }
+
+            uploadedDocuments.forEach(doc => {
+                const isChecked = activeDocumentIds.includes(doc.id);
+                const item = document.createElement("div");
+                item.style.display = "flex";
+                item.style.alignItems = "center";
+                item.style.justifyContent = "space-between";
+                item.style.padding = "8px 12px";
+                item.style.background = isChecked ? "rgba(99, 102, 241, 0.08)" : "rgba(255,255,255,0.02)";
+                item.style.border = isChecked ? "1px solid #6366f1" : "1px solid rgba(255,255,255,0.05)";
+                item.style.borderRadius = "6px";
+                item.style.cursor = "pointer";
+                
+                item.onclick = (e) => {
+                    if (e.target.type === "checkbox") return;
+                    toggleDocSelection(doc.id);
+                };
+
+                item.innerHTML = `
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <input type="checkbox" ${isChecked ? "checked" : ""} onchange="event.stopPropagation(); toggleDocSelection('${doc.id}')" style="cursor:pointer;" />
+                        <span style="font-size:0.9rem; font-weight:${isChecked ? "600" : "400"};">${doc.name}</span>
+                    </div>
+                    <span style="font-size:0.8rem; color:var(--text-secondary);">${doc.chunks} chunks</span>
+                `;
+                list.appendChild(item);
+            });
+
+            if (activeDocumentIds.length > 0) {
+                document.getElementById("qa-section").style.display = "block";
+                const activeNames = uploadedDocuments
+                    .filter(d => activeDocumentIds.includes(d.id))
+                    .map(d => d.name);
+                
+                document.getElementById("indexed-filename").innerText = activeDocumentIds.length === 1
+                    ? `Active Document: ${activeNames[0]}`
+                    : `Active Documents: ${activeNames.join(", ")}`;
+            } else {
+                document.getElementById("qa-section").style.display = "none";
+            }
+        }
+
+        function toggleDocSelection(docId) {
+            const idx = activeDocumentIds.indexOf(docId);
+            if (idx > -1) {
+                activeDocumentIds.splice(idx, 1);
+            } else {
+                activeDocumentIds.push(docId);
+            }
+            renderDocsList();
+        }
 
         async function uploadDocument() {
             const fileInput = document.getElementById("file-input");
@@ -59,13 +144,14 @@
                 const data = await res.json();
                 
                 if (data.success) {
-                    activeDocId = data.document_id;
-                    activeFilename = data.filename;
-                    
-                    status.innerText = `Successfully indexed "${data.filename}" (${data.chunk_count} chunks).`;
-                    document.getElementById("indexed-filename").innerText = `Active Document: ${data.filename}`;
-                    document.getElementById("qa-section").style.display = "block";
-                    document.getElementById("chat-box").innerHTML = "";
+                    status.innerText = `Successfully indexed "${data.filename}".`;
+                    uploadedDocuments.push({
+                        id: data.document_id,
+                        name: data.filename,
+                        chunks: data.chunk_count
+                    });
+                    activeDocumentIds.push(data.document_id);
+                    renderDocsList();
                 } else {
                     status.innerText = "Error: " + (data.error || "Failed to parse document.");
                 }
@@ -82,7 +168,7 @@
             e.preventDefault();
             const input = document.getElementById("query-input");
             const query = input.value.trim();
-            if (!query || !activeDocId) return;
+            if (!query || activeDocumentIds.length === 0) return;
             
             input.value = "";
             appendMessage("user", query);
@@ -93,7 +179,7 @@
                 const res = await fetch("/api/query", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ document_id: activeDocId, question: query })
+                    body: JSON.stringify({ document_ids: activeDocumentIds, question: query })
                 });
                 const data = await res.json();
                 

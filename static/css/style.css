@@ -1,24 +1,24 @@
 /* LastMinute.AI - Modern Glassmorphic UI Stylesheet */
 
 :root {
-  --bg-primary: #09090b;
-  --bg-secondary: #0f0f13;
-  --card-bg: rgba(20, 20, 25, 0.65);
-  --card-border: rgba(255, 255, 255, 0.07);
-  --card-border-focus: rgba(99, 102, 241, 0.4);
+  --bg-primary: #080a0f;
+  --bg-secondary: #0d0e15;
+  --card-bg: rgba(18, 22, 33, 0.65);
+  --card-border: rgba(255, 255, 255, 0.05);
+  --card-border-focus: rgba(6, 182, 212, 0.4);
   
   --text-primary: #f4f4f5;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
   
-  --accent-primary: #6366f1; /* Indigo */
-  --accent-secondary: #a855f7; /* Purple */
-  --accent-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-  --blue-gradient: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+  --accent-primary: #06b6d4; /* Electric Cyan */
+  --accent-secondary: #10b981; /* Neon Teal/Emerald */
+  --accent-gradient: linear-gradient(135deg, #06b6d4 0%, #10b981 100%);
+  --blue-gradient: linear-gradient(135deg, #0ea5e9 0%, #14b8a6 100%);
   
   --success: #10b981;
   --success-glow: rgba(16, 185, 129, 0.15);
-  --warning: #f59e0b;
+  --warning: #eab308;
   --danger: #ef4444;
   --danger-glow: rgba(239, 68, 68, 0.15);
   
@@ -27,7 +27,7 @@
   
   --sidebar-width: 260px;
   --transition-speed: 0.3s;
-  --glow-shadow: 0 0 20px rgba(99, 102, 241, 0.15);
+  --glow-shadow: 0 0 20px rgba(6, 182, 212, 0.15);
 }
 
 /* Base Styles & Reset */
@@ -791,6 +791,7 @@ textarea {
 .ats-circle-gauge {
   width: 80px;
   height: 80px;
+  flex-shrink: 0;
 }
 
 .circular-chart {
@@ -1819,4 +1820,16 @@ textarea {
   .skills-breakdown-row {
     grid-template-columns: 1fr;
   }
+}
+
+.pulse-mic {
+  background: var(--success-primary, #10b981) !important;
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.6) !important;
+  color: #fff !important;
+  animation: micPulseKey 1.5s infinite alternate;
+}
+
+@keyframes micPulseKey {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.12); }
 }

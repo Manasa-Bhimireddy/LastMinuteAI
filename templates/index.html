@@ -12,6 +12,8 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- Marked.js (Markdown Renderer) -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Chart.js for skill gap visualization -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- Custom Stylesheet -->
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
@@ -222,11 +224,11 @@
                     <svg viewBox="0 0 36 36" class="circular-chart">
                       <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                       <path class="circle" id="ats-score-circle" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                      <text x="18" y="20.35" class="percentage" id="ats-score-text">0%</text>
+                      <text x="18" y="18" dominant-baseline="central" class="percentage" id="ats-score-text" fill="#ffffff" style="font-size: 8px; font-weight: 800; text-anchor: middle; font-family: 'Outfit', sans-serif;">0%</text>
                     </svg>
                   </div>
                   <div class="score-meta">
-                    <h4>ATS Match Rating</h4>
+                    <h4>ATS Match Rating: <span id="ats-score-text-val" style="color: var(--accent-primary); font-weight: 700;">0%</span></h4>
                     <p id="ats-score-label">Suboptimal Match</p>
                     <div class="badges-row">
                       <span class="skill-badge-count green" id="matched-skills-count">0 Matched</span>
@@ -243,6 +245,13 @@
                   <div class="skills-column">
                     <h5>Missing Skills (Skill Gap)</h5>
                     <div class="skills-tag-container" id="missing-skills-tags"></div>
+                  </div>
+                </div>
+
+                <div class="skills-chart-box" style="margin-bottom: 24px; padding: 16px; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.04); border-radius: 12px;">
+                  <h5 style="margin-top: 0; margin-bottom: 16px;">Skill Alignment Analysis</h5>
+                  <div style="max-height: 280px; width: 100%; display: flex; justify-content: center; position: relative;">
+                    <canvas id="ats-skills-chart"></canvas>
                   </div>
                 </div>
 
@@ -436,8 +445,8 @@
               
               <div class="file-drag-area" id="doc-drag-area" style="margin-bottom: 20px;">
                 <i data-lucide="file-text" class="upload-arrow-icon"></i>
-                <p>Upload PDF, DOCX, or TXT study guide</p>
-                <input type="file" id="doc-file-input" accept=".pdf,.docx,.txt" style="display: none;" />
+                <p>Upload PDF, DOCX, TXT, or Image notes</p>
+                <input type="file" id="doc-file-input" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg" style="display: none;" />
                 <div id="uploading-doc-spinner" class="spinner" style="display: none; margin: 10px auto;"></div>
               </div>
               
@@ -472,6 +481,9 @@
                 <!-- Input container -->
                 <form id="doc-chat-input-form" class="chat-input-container">
                   <input type="text" id="doc-chat-input" placeholder="Enter a question about the active document..." disabled required />
+                  <button type="button" class="btn btn-secondary btn-icon" id="doc-chat-mic-btn" disabled onclick="toggleVoiceInput('doc-chat-input', this)">
+                    <i data-lucide="mic" class="mic-icon"></i>
+                  </button>
                   <button type="submit" class="btn btn-primary btn-icon" id="doc-chat-send-btn" disabled>
                     <i data-lucide="send"></i>
                   </button>
@@ -522,6 +534,9 @@
             
             <form id="tutor-chat-input-form" class="chat-input-container">
               <input type="text" id="tutor-chat-input" placeholder="Ask your academic question here..." required />
+              <button type="button" class="btn btn-secondary btn-icon" id="tutor-chat-mic-btn" onclick="toggleVoiceInput('tutor-chat-input', this)">
+                <i data-lucide="mic" class="mic-icon"></i>
+              </button>
               <button type="submit" class="btn btn-primary btn-icon" id="tutor-chat-send-btn">
                 <i data-lucide="send"></i>
               </button>

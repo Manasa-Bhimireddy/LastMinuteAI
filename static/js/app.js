@@ -8,6 +8,7 @@ const state = {
   resumeAnalysis: null,
   activeDocumentId: null,
   activeDocumentName: null,
+  activeDocumentIds: [], // Multi-select support
   uploadedDocuments: [], // Array of { id, name, chunks }
   studyPlan: null,
   // Quiz states
@@ -70,6 +71,10 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Initialize dynamic views
   updateDashboardViews();
+
+  // Load database items on startup
+  loadUploadedDocuments();
+  loadPinnedGoals();
 
   // Init Typing Effect
   initTypingEffect();
@@ -605,7 +610,7 @@ function setupFormHandlers() {
     e.preventDefault();
     const input = document.getElementById('doc-chat-input');
     const queryText = input.value.trim();
-    if (!queryText || !state.activeDocumentId) return;
+    if (!queryText || state.activeDocumentIds.length === 0) return;
 
     appendDocChatMessage('user', queryText);
     input.value = '';
@@ -620,7 +625,7 @@ function setupFormHandlers() {
           'X-Groq-API-Key': sessionGetApiKey()
         },
         body: JSON.stringify({
-          document_id: state.activeDocumentId,
+          document_ids: state.activeDocumentIds,
           question: queryText
         })
       });
@@ -661,8 +666,32 @@ function renderResumeResults(data) {
   
   const score = Math.round(data.ats_score);
   const circle = document.getElementById('ats-score-circle');
-  circle.setAttribute('stroke-dasharray', `${score}, 100`);
-  document.getElementById('ats-score-text').innerText = `${score}%`;
+  if (circle) {
+    circle.setAttribute('stroke-dasharray', `${score}, 100`);
+    if (score >= 80) {
+      circle.style.stroke = 'var(--success, #10b981)';
+    } else if (score >= 60) {
+      circle.style.stroke = 'var(--accent-secondary, #f59e0b)';
+    } else {
+      circle.style.stroke = 'var(--warning, #ef4444)';
+    }
+  }
+  const scoreText = document.getElementById('ats-score-text');
+  if (scoreText) {
+    scoreText.textContent = `${score}%`;
+  }
+  
+  const valEl = document.getElementById('ats-score-text-val');
+  if (valEl) {
+    valEl.innerText = `${score}%`;
+    if (score >= 80) {
+      valEl.style.color = 'var(--success)';
+    } else if (score >= 60) {
+      valEl.style.color = 'var(--accent-secondary)';
+    } else {
+      valEl.style.color = 'var(--warning)';
+    }
+  }
   
   const label = document.getElementById('ats-score-label');
   if (score >= 80) {
@@ -703,6 +732,9 @@ function renderResumeResults(data) {
   markdownDiv.innerHTML = marked.parse(data.suggestions);
   formatCodeBlocks(markdownDiv);
 
+  // Render Skill Gap Graph
+  renderSkillsRadarChart(data.matched_skills, data.missing_skills);
+
   document.getElementById('dash-ats-score').innerText = `${score}%`;
   document.getElementById('dash-skills-count').innerText = data.resume_skills.length;
   state.resumeAnalysis = data;
@@ -725,14 +757,23 @@ function renderStudyPlan(markdownPlan) {
   };
 }
 
-function pinPlanToDashboard(plan) {
-  if (!state.pinnedGoals.some(g => g.target === plan.target)) {
-    state.pinnedGoals.push({
-      target: plan.target,
-      duration: plan.duration,
-      progress: 0
+async function pinPlanToDashboard(plan) {
+  try {
+    const res = await fetch('/api/goals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        target: plan.target,
+        duration: plan.duration,
+        plan_text: plan.planText
+      })
     });
-    updateDashboardViews();
+    const data = await res.json();
+    if (data.success) {
+      loadPinnedGoals();
+    }
+  } catch (err) {
+    console.error('Failed to pin goal:', err);
   }
 }
 
@@ -776,10 +817,27 @@ function updateDashboardViews() {
   lucide.createIcons();
 }
 
-function incrementGoalProgress(idx) {
-  if (state.pinnedGoals[idx]) {
-    state.pinnedGoals[idx].progress = Math.min(100, state.pinnedGoals[idx].progress + 10);
-    updateDashboardViews();
+async function incrementGoalProgress(idx) {
+  const goal = state.pinnedGoals[idx];
+  if (goal) {
+    const newProgress = Math.min(100, goal.progress + 10);
+    try {
+      const res = await fetch('/api/goals/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target: goal.target,
+          progress: newProgress
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        goal.progress = newProgress;
+        updateDashboardViews();
+      }
+    } catch (err) {
+      console.error('Failed to update progress:', err);
+    }
   }
 }
 
@@ -929,8 +987,10 @@ function prevFlashcard() {
 // 7. RAG: Document Upload & Context Question Answering
 
 async function handleDocUpload(file) {
-  if (!file.name.endsWith('.pdf') && !file.name.endsWith('.docx') && !file.name.endsWith('.txt')) {
-    showToast('Supported document formats: PDF, DOCX, TXT.', 'warning');
+  const lowerName = file.name.toLowerCase();
+  if (!lowerName.endsWith('.pdf') && !lowerName.endsWith('.docx') && !lowerName.endsWith('.txt') &&
+      !lowerName.endsWith('.png') && !lowerName.endsWith('.jpg') && !lowerName.endsWith('.jpeg')) {
+    showToast('Supported document formats: PDF, DOCX, TXT, PNG, JPG, JPEG.', 'warning');
     return;
   }
 
@@ -978,14 +1038,19 @@ function renderUploadedDocumentsList() {
   }
 
   state.uploadedDocuments.forEach(doc => {
+    const isChecked = state.activeDocumentIds.includes(doc.id);
     const item = document.createElement('div');
-    item.className = `doc-list-item ${state.activeDocumentId === doc.id ? 'selected' : ''}`;
-    item.onclick = () => selectActiveDocument(doc.id, doc.name);
+    item.className = `doc-list-item ${isChecked ? 'selected' : ''}`;
+    item.onclick = (e) => {
+      if (e.target.type === 'checkbox') return;
+      toggleDocumentSelection(doc.id, doc.name);
+    };
 
     item.innerHTML = `
-      <div class="doc-info-wrapper">
-        <i data-lucide="file-check"></i>
-        <div class="doc-name" title="${doc.name}">${doc.name}</div>
+      <div class="doc-info-wrapper" style="display:flex; align-items:center; gap: 8px;">
+        <input type="checkbox" class="doc-select-checkbox" data-id="${doc.id}" ${isChecked ? 'checked' : ''} onchange="event.stopPropagation(); toggleDocumentSelection('${doc.id}', '${doc.name}')" style="accent-color: var(--accent-primary); cursor: pointer;" />
+        <i data-lucide="file-text" style="color: ${isChecked ? 'var(--accent-primary)' : 'var(--text-secondary)'};"></i>
+        <div class="doc-name" title="${doc.name}" style="font-weight: ${isChecked ? '600' : '400'}">${doc.name}</div>
       </div>
       <span class="doc-chunks">${doc.chunks} chunks</span>
     `;
@@ -995,24 +1060,57 @@ function renderUploadedDocumentsList() {
   lucide.createIcons();
 }
 
-function selectActiveDocument(docId, docName) {
-  state.activeDocumentId = docId;
-  state.activeDocumentName = docName;
-  
+function toggleDocumentSelection(docId, docName) {
+  const idx = state.activeDocumentIds.indexOf(docId);
+  if (idx > -1) {
+    state.activeDocumentIds.splice(idx, 1);
+  } else {
+    state.activeDocumentIds.push(docId);
+  }
+
   renderUploadedDocumentsList();
 
-  document.getElementById('active-document-title').innerText = docName;
+  const titleEl = document.getElementById('active-document-title');
   const badge = document.getElementById('rag-badge');
-  badge.className = 'rag-indicator status-enabled';
-  badge.innerText = 'RAG Online';
+  const chatInput = document.getElementById('doc-chat-input');
+  const sendBtn = document.getElementById('doc-chat-send-btn');
+  const micBtn = document.getElementById('doc-chat-mic-btn');
 
-  document.getElementById('doc-chat-input').disabled = false;
-  document.getElementById('doc-chat-send-btn').disabled = false;
-  
+  if (state.activeDocumentIds.length > 0) {
+    state.activeDocumentId = state.activeDocumentIds[state.activeDocumentIds.length - 1];
+    state.activeDocumentName = docName;
+    
+    if (state.activeDocumentIds.length === 1) {
+      titleEl.innerText = docName;
+    } else {
+      titleEl.innerText = `${state.activeDocumentIds.length} Files Selected`;
+    }
+    
+    badge.className = 'rag-indicator status-enabled';
+    badge.innerText = 'RAG Online';
+    chatInput.disabled = false;
+    sendBtn.disabled = false;
+    if (micBtn) micBtn.disabled = false;
+  } else {
+    state.activeDocumentId = null;
+    state.activeDocumentName = null;
+    titleEl.innerText = 'No Document Selected';
+    badge.className = 'rag-indicator status-disabled';
+    badge.innerText = 'RAG Offline';
+    chatInput.disabled = true;
+    sendBtn.disabled = true;
+    if (micBtn) micBtn.disabled = true;
+  }
+
   const chatMessages = document.getElementById('doc-chat-messages');
   if (chatMessages.querySelector('.chat-placeholder')) {
     chatMessages.innerHTML = '';
   }
+}
+
+function selectActiveDocument(docId, docName) {
+  state.activeDocumentIds = [];
+  toggleDocumentSelection(docId, docName);
 }
 
 function appendDocChatMessage(role, text, sources = []) {
@@ -1021,7 +1119,20 @@ function appendDocChatMessage(role, text, sources = []) {
   const msgDiv = document.createElement('div');
   msgDiv.className = `message ${role === 'user' ? 'user-message' : 'model-message'}`;
 
-  let htmlContent = `<div class="message-content"><p>${text}</p>`;
+  let htmlContent = '';
+  if (role === 'user') {
+    htmlContent = `<div class="message-content"><p>${text}</p>`;
+  } else {
+    htmlContent = `
+      <div class="message-content">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap: 10px;">
+          <p style="margin:0; flex: 1;">${text}</p>
+          <button class="btn btn-secondary btn-sm btn-icon" onclick="readBubbleText(this)" style="padding: 4px; border-radius: 6px; flex-shrink: 0;" title="Read aloud">
+            <i data-lucide="volume-2"></i>
+          </button>
+        </div>
+    `;
+  }
 
   if (sources && sources.length > 0) {
     htmlContent += `
@@ -1043,6 +1154,7 @@ function appendDocChatMessage(role, text, sources = []) {
   container.appendChild(msgDiv);
   
   container.scrollTop = container.scrollHeight;
+  lucide.createIcons();
   return msgDiv;
 }
 
@@ -1090,7 +1202,16 @@ async function sendTutorMessage(text) {
       
       const modelDiv = document.createElement('div');
       modelDiv.className = 'message model-message';
-      modelDiv.innerHTML = `<div class="message-content">${marked.parse(replyText)}</div>`;
+      modelDiv.innerHTML = `
+        <div class="message-content">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap: 10px;">
+            <div style="flex: 1;">${marked.parse(replyText)}</div>
+            <button class="btn btn-secondary btn-sm btn-icon" onclick="readBubbleText(this)" style="padding: 4px; border-radius: 6px; flex-shrink: 0;" title="Read aloud">
+              <i data-lucide="volume-2"></i>
+            </button>
+          </div>
+        </div>
+      `;
       container.appendChild(modelDiv);
       
       formatCodeBlocks(modelDiv);
@@ -1150,3 +1271,187 @@ function togglePasswordVisibility(inputId) {
   }
   lucide.createIcons();
 }
+
+// 10. SQLite persist loaders
+async function loadUploadedDocuments() {
+  try {
+    const res = await fetch('/api/documents');
+    const data = await res.json();
+    if (data.success) {
+      state.uploadedDocuments = data.documents;
+      renderUploadedDocumentsList();
+    }
+  } catch (err) {
+    console.error('Failed to load documents:', err);
+  }
+}
+
+async function loadPinnedGoals() {
+  try {
+    const res = await fetch('/api/goals');
+    const data = await res.json();
+    if (data.success) {
+      state.pinnedGoals = data.goals;
+      updateDashboardViews();
+    }
+  } catch (err) {
+    console.error('Failed to load goals:', err);
+  }
+}
+
+// 11. Chart.js Radar helper
+let skillsChartInstance = null;
+
+function renderSkillsRadarChart(matched, missing) {
+  const canvas = document.getElementById('ats-skills-chart');
+  if (!canvas) return;
+  
+  const ctx = canvas.getContext('2d');
+  if (skillsChartInstance) {
+    skillsChartInstance.destroy();
+  }
+  
+  const allLabels = [...matched.slice(0, 6), ...missing.slice(0, 6)];
+  if (allLabels.length === 0) {
+    allLabels.push("No Skills Detected");
+  }
+  
+  const matchedData = allLabels.map(label => matched.includes(label) ? 100 : 0);
+  const missingData = allLabels.map(label => missing.includes(label) ? 100 : 0);
+  
+  skillsChartInstance = new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels: allLabels,
+      datasets: [
+        {
+          label: 'Matched Skills',
+          data: matchedData,
+          backgroundColor: 'rgba(6, 182, 212, 0.25)',
+          borderColor: '#06b6d4',
+          pointBackgroundColor: '#06b6d4',
+          borderWidth: 2
+        },
+        {
+          label: 'Missing Skills',
+          data: missingData,
+          backgroundColor: 'rgba(234, 179, 8, 0.25)',
+          borderColor: '#eab308',
+          pointBackgroundColor: '#eab308',
+          borderWidth: 2
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        r: {
+          grid: { color: 'rgba(255, 255, 255, 0.08)' },
+          angleLines: { color: 'rgba(255, 255, 255, 0.08)' },
+          pointLabels: {
+            color: '#9ca3af',
+            font: { family: 'Outfit', size: 10, weight: '500' }
+          },
+          ticks: { display: false, maxTicksLimit: 3 },
+          suggestedMin: 0,
+          suggestedMax: 100
+        }
+      },
+      plugins: {
+        legend: {
+          labels: {
+            color: '#f3f4f6',
+            font: { family: 'Outfit', size: 11 }
+          }
+        }
+      }
+    }
+  });
+}
+
+// 12. Voice Recognition STT & TTS
+let activeRecognitionInstance = null;
+
+window.toggleVoiceInput = function(inputId, button) {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    showToast('Voice typing is not supported in this browser. Please try Chrome/Edge.', 'warning');
+    return;
+  }
+  
+  const inputEl = document.getElementById(inputId);
+  if (!inputEl) return;
+  
+  if (activeRecognitionInstance) {
+    activeRecognitionInstance.stop();
+    activeRecognitionInstance = null;
+    button.classList.remove('pulse-mic');
+    showToast('Voice input stopped.', 'info');
+    return;
+  }
+  
+  const recognition = new SpeechRecognition();
+  recognition.lang = 'en-US';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  
+  recognition.onstart = () => {
+    button.classList.add('pulse-mic');
+    showToast('Listening... Speak now.', 'success');
+  };
+  
+  recognition.onresult = (event) => {
+    const speechResult = event.results[0][0].transcript;
+    inputEl.value = (inputEl.value + ' ' + speechResult).trim();
+  };
+  
+  recognition.onerror = (event) => {
+    console.error('Speech recognition error:', event.error);
+    showToast('Voice error: ' + event.error, 'danger');
+    button.classList.remove('pulse-mic');
+    activeRecognitionInstance = null;
+  };
+  
+  recognition.onend = () => {
+    button.classList.remove('pulse-mic');
+    activeRecognitionInstance = null;
+  };
+  
+  activeRecognitionInstance = recognition;
+  recognition.start();
+};
+
+window.readBubbleText = function(button) {
+  const messageEl = button.closest('.message');
+  const contentEl = messageEl.querySelector('.message-content');
+  if (!contentEl) return;
+  
+  const clone = contentEl.cloneNode(true);
+  const btns = clone.querySelectorAll('button');
+  btns.forEach(b => b.remove());
+  const text = clone.innerText;
+  
+  if (window.speechSynthesis.speaking) {
+    window.speechSynthesis.cancel();
+    button.innerHTML = '<i data-lucide="volume-2"></i>';
+    lucide.createIcons();
+    showToast('Speech stopped.', 'info');
+    return;
+  }
+  
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.onend = () => {
+    button.innerHTML = '<i data-lucide="volume-2"></i>';
+    lucide.createIcons();
+  };
+  utterance.onerror = () => {
+    button.innerHTML = '<i data-lucide="volume-2"></i>';
+    lucide.createIcons();
+  };
+  
+  button.innerHTML = '<i data-lucide="square"></i>';
+  lucide.createIcons();
+  window.speechSynthesis.speak(utterance);
+  showToast('Speaking...', 'success');
+};

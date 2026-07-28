@@ -37,9 +37,57 @@ UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'upload
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+import sqlite3
+
+# Initialize SQLite database
+def init_db():
+    conn = sqlite3.connect("database.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS documents (
+            id TEXT PRIMARY KEY,
+            filename TEXT,
+            index_dir TEXT,
+            chunk_count INTEGER,
+            uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS study_plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            target TEXT,
+            duration TEXT,
+            hours TEXT,
+            level TEXT,
+            plan_text TEXT,
+            progress INTEGER DEFAULT 0,
+            pinned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+# Initial database load
+def load_db_to_memory():
+    try:
+        init_db()
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, filename, index_dir, chunk_count FROM documents")
+        for row in cursor.fetchall():
+            DOCUMENTS_STORE[row[0]] = {
+                "filename": row[1],
+                "index_dir": row[2],
+                "chunk_count": row[3]
+            }
+        conn.close()
+    except Exception as e:
+        print(f"Database load error: {e}")
+
 # In-memory stores
 # Format: { doc_id: { "filename": str, "index_dir": str, "chunk_count": int } }
 DOCUMENTS_STORE = {}
+load_db_to_memory()
 
 # Fallback Helper: Extract text from PDF using pdfplumber if pypdf is empty
 def extract_pdf_text_pdfplumber(path):
@@ -236,13 +284,24 @@ def analyze_resume():
     
     # Calculate similarity score using CountVectorizer as shown in Screenshot 29
     ats_score = 0.0
+    similarity = 0.0
     try:
         cv = CountVectorizer()
         matrix = cv.fit_transform([resume_text, jd])
         similarity = cosine_similarity(matrix)[0][1]
-        ats_score = round(similarity * 100, 2)
     except Exception as e:
         print(f"CountVectorizer similarity error: {e}")
+        
+    # Weighted ATS matching: 70% skill match coverage, 30% general text similarity
+    if jd_skills:
+        skill_match_ratio = len(matched_skills) / len(jd_skills)
+        ats_score = round((0.7 * skill_match_ratio + 0.3 * similarity) * 100, 2)
+    else:
+        ats_score = round(similarity * 100, 2)
+        
+    # Safeguard minimum score if skills matched
+    if matched_skills and ats_score < 10.0:
+        ats_score = min(35.0, 10.0 * len(matched_skills))
         
     # Call LLM for personalized suggestions
     suggestions = ""
@@ -333,6 +392,71 @@ def generate_quiz_and_flashcards():
         print(f"Error generating quiz/flashcards: {e}")
         return jsonify({"error": f"Failed to generate study materials: {str(e)}"}), 500
 
+# RAG Vision OCR helper using LLM multi-modal APIs
+def extract_image_text_via_ai(filepath):
+    provider, key = get_llm_provider()
+    if not provider:
+        return "Error: No API Key configured. Please add an API Key in settings to enable image OCR parsing."
+        
+    if provider == "gemini":
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            
+            with open(filepath, "rb") as f:
+                image_data = f.read()
+                
+            mime = "image/jpeg" if filepath.lower().endswith((".jpg", ".jpeg")) else "image/png"
+            image_parts = [
+                {
+                    "mime_type": mime,
+                    "data": image_data
+                }
+            ]
+            
+            prompt = "Transcribe all visible text, handwriting, and equations in this image accurately. Output only the transcription, do not summarize."
+            response = model.generate_content([prompt, image_parts[0]])
+            return response.text
+        except Exception as e:
+            print(f"Gemini OCR error: {e}")
+            return f"Gemini OCR Failed: {str(e)}"
+            
+    elif provider == "groq":
+        try:
+            import base64
+            from groq import Groq
+            client = Groq(api_key=key)
+            
+            with open(filepath, "rb") as f:
+                image_base64 = base64.b64encode(f.read()).decode("utf-8")
+                
+            mime = "image/jpeg" if filepath.lower().endswith((".jpg", ".jpeg")) else "image/png"
+            
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Transcribe all visible text, handwriting, and equations in this image accurately. Output only the transcription, do not summarize."},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{mime};base64,{image_base64}",
+                                },
+                            },
+                        ],
+                    }
+                ],
+                model="llama-3.2-11b-vision-preview",
+            )
+            return chat_completion.choices[0].message.content
+        except Exception as e:
+            print(f"Groq Vision OCR error: {e}")
+            return f"Groq Vision OCR Failed: {str(e)}"
+            
+    return "Unsupported OCR provider. Please configure Google Gemini or Groq in Settings."
+
 # RAG Upload endpoint using modular vector_store.py
 @app.route('/api/upload-document', methods=['POST'])
 def upload_document():
@@ -349,21 +473,24 @@ def upload_document():
     
     # Extract text using modular helpers
     text = ""
-    if filename.endswith(".pdf"):
+    filename_lower = filename.lower()
+    if filename_lower.endswith(".pdf"):
         text = extract_pdf_text_pypdf(filepath)
         if not text or not text.strip():
             text = extract_pdf_text_pdfplumber(filepath)
-    elif filename.endswith(".docx"):
+    elif filename_lower.endswith(".docx"):
         text = extract_docx_text(filepath)
-    elif filename.endswith(".txt"):
+    elif filename_lower.endswith(".txt"):
         try:
             with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                 text = f.read()
         except Exception as e:
             print(f"Error reading txt: {e}")
+    elif filename_lower.endswith((".png", ".jpg", ".jpeg")):
+        text = extract_image_text_via_ai(filepath)
     else:
         os.remove(filepath)
-        return jsonify({"error": "Unsupported file format. Please upload PDF, DOCX, or TXT."}), 400
+        return jsonify({"error": "Unsupported file format. Please upload PDF, DOCX, TXT, PNG, JPG, or JPEG."}), 400
         
     # Clean up file after reading
     try:
@@ -396,6 +523,19 @@ def upload_document():
             "chunk_count": len(chunks)
         }
         
+        # Save to SQLite persistence
+        try:
+            conn = sqlite3.connect("database.db")
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO documents (id, filename, index_dir, chunk_count) VALUES (?, ?, ?, ?)",
+                (doc_id, filename, index_dir, len(chunks))
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"Error persisting document to SQLite: {e}")
+        
         return jsonify({
             "success": True,
             "document_id": doc_id,
@@ -406,32 +546,119 @@ def upload_document():
         print(f"FAISS indexing error: {e}")
         return jsonify({"error": f"Failed to index document: {str(e)}"}), 500
 
-# RAG Query endpoint using modular rag_chat.py
+# Documents list fetcher
+@app.route('/api/documents', methods=['GET'])
+def get_all_documents():
+    docs_list = []
+    for k, v in DOCUMENTS_STORE.items():
+        docs_list.append({
+            "id": k,
+            "name": v["filename"],
+            "chunks": v["chunk_count"]
+        })
+    return jsonify({"success": True, "documents": docs_list})
+
+# Study Goals APIs
+@app.route('/api/goals', methods=['GET'])
+def get_goals():
+    try:
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, target, duration, hours, level, progress FROM study_plans")
+        goals = []
+        for row in cursor.fetchall():
+            goals.append({
+                "id": row[0],
+                "target": row[1],
+                "duration": row[2],
+                "hours": row[3],
+                "level": row[4],
+                "progress": row[5]
+            })
+        conn.close()
+        return jsonify({"success": True, "goals": goals})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/goals', methods=['POST'])
+def save_goal():
+    data = request.json or {}
+    target = data.get("target", "").strip()
+    duration = data.get("duration", "").strip()
+    hours = data.get("hours", "10").strip()
+    level = data.get("level", "Beginner").strip()
+    plan_text = data.get("plan_text", "").strip()
+    
+    if not target:
+        return jsonify({"success": False, "error": "Target is required"}), 400
+        
+    try:
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM study_plans WHERE target = ?", (target,))
+        existing = cursor.fetchone()
+        if existing:
+            conn.close()
+            return jsonify({"success": True, "message": "Goal already exists."})
+            
+        cursor.execute(
+            "INSERT INTO study_plans (target, duration, hours, level, plan_text, progress) VALUES (?, ?, ?, ?, ?, ?)",
+            (target, duration, hours, level, plan_text, 0)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True, "message": "Goal pinned successfully!"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/goals/update', methods=['POST'])
+def update_goal_progress():
+    data = request.json or {}
+    target = data.get("target", "").strip()
+    progress = data.get("progress", 0)
+    
+    try:
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+        cursor.execute("UPDATE study_plans SET progress = ? WHERE target = ?", (progress, target))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# RAG Query endpoint modified for index merging
 @app.route('/api/query-document', methods=['POST'])
 def query_document():
     data = request.json or {}
-    doc_id = data.get("document_id", "").strip()
+    doc_ids = data.get("document_ids", [])
     question = data.get("question", "").strip()
     
-    if not doc_id or not question:
-        return jsonify({"error": "Document ID and question are required"}), 400
+    # Compatibility support
+    if not doc_ids and data.get("document_id"):
+        doc_ids = [data.get("document_id")]
         
-    if doc_id not in DOCUMENTS_STORE:
-        return jsonify({"error": "Document not found or session expired"}), 404
+    if not doc_ids or not question:
+        return jsonify({"error": "Document selection and question are required"}), 400
         
-    doc_data = DOCUMENTS_STORE[doc_id]
-    index_dir = doc_data["index_dir"]
-    
     try:
         embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        db = FAISS.load_local(index_dir, embeddings, allow_dangerous_deserialization=True)
         
-        # Retrieve context docs as shown in Screenshot 4 & 8
-        docs = db.similarity_search(question, k=4)
-        
-        # Answer using modular utility
+        merged_db = None
+        for doc_id in doc_ids:
+            if doc_id in DOCUMENTS_STORE:
+                index_dir = DOCUMENTS_STORE[doc_id]["index_dir"]
+                db = FAISS.load_local(index_dir, embeddings, allow_dangerous_deserialization=True)
+                if merged_db is None:
+                    merged_db = db
+                else:
+                    merged_db.merge_from(db)
+                    
+        if merged_db is None:
+            return jsonify({"error": "No valid documents loaded"}), 404
+            
+        docs = merged_db.similarity_search(question, k=4)
         response_text = answer_question(docs, question)
-        
         sources = [doc.page_content for doc in docs]
         
         return jsonify({
