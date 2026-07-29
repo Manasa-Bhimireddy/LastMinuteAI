@@ -44,6 +44,14 @@ def init_db():
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS documents (
             id TEXT PRIMARY KEY,
             filename TEXT,
@@ -64,6 +72,15 @@ def init_db():
             pinned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # Run dynamic migrations to append user_id columns safely
+    try:
+        cursor.execute("ALTER TABLE documents ADD COLUMN user_id INTEGER")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE study_plans ADD COLUMN user_id INTEGER")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -73,21 +90,108 @@ def load_db_to_memory():
         init_db()
         conn = sqlite3.connect("database.db")
         cursor = conn.cursor()
-        cursor.execute("SELECT id, filename, index_dir, chunk_count FROM documents")
+        cursor.execute("SELECT id, filename, index_dir, chunk_count, user_id FROM documents")
         for row in cursor.fetchall():
             DOCUMENTS_STORE[row[0]] = {
                 "filename": row[1],
                 "index_dir": row[2],
-                "chunk_count": row[3]
+                "chunk_count": row[3],
+                "user_id": row[4]
             }
         conn.close()
     except Exception as e:
         print(f"Database load error: {e}")
 
 # In-memory stores
-# Format: { doc_id: { "filename": str, "index_dir": str, "chunk_count": int } }
+# Format: { doc_id: { "filename": str, "index_dir": str, "chunk_count": int, "user_id": int } }
 DOCUMENTS_STORE = {}
 load_db_to_memory()
+
+# User Authentication Endpoints
+@app.route('/api/register', methods=['POST'])
+def register_user():
+    data = request.get_json() or {}
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    
+    if not username or not password:
+        return jsonify({"error": "Username and password are required"}), 400
+    if len(username) < 3:
+        return jsonify({"error": "Username must be at least 3 characters"}), 400
+    if len(password) < 4:
+        return jsonify({"error": "Password must be at least 4 characters"}), 400
+        
+    from werkzeug.security import generate_password_hash
+    password_hash = generate_password_hash(password)
+    
+    try:
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+            (username, password_hash)
+        )
+        user_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        session['user_id'] = user_id
+        session['username'] = username
+        return jsonify({"success": True, "user": {"id": user_id, "username": username}})
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "Username already exists"}), 400
+    except Exception as e:
+        print(f"Registration error: {e}")
+        return jsonify({"error": f"Registration failed: {str(e)}"}), 500
+
+@app.route('/api/login', methods=['POST'])
+def login_user():
+    data = request.get_json() or {}
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    
+    if not username or not password:
+        return jsonify({"error": "Username and password are required"}), 400
+        
+    try:
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, password_hash FROM users WHERE username = ?", (username,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return jsonify({"error": "Invalid username or password"}), 400
+            
+        user_id, password_hash = row
+        from werkzeug.security import check_password_hash
+        if not check_password_hash(password_hash, password):
+            return jsonify({"error": "Invalid username or password"}), 400
+            
+        session['user_id'] = user_id
+        session['username'] = username
+        return jsonify({"success": True, "user": {"id": user_id, "username": username}})
+    except Exception as e:
+        print(f"Login error: {e}")
+        return jsonify({"error": f"Login failed: {str(e)}"}), 500
+
+@app.route('/api/logout', methods=['POST'])
+def logout_user():
+    session.pop('user_id', None)
+    session.pop('username', None)
+    return jsonify({"success": True})
+
+@app.route('/api/session', methods=['GET'])
+def get_user_session():
+    if 'user_id' in session:
+        return jsonify({
+            "logged_in": True,
+            "user": {
+                "id": session['user_id'],
+                "username": session['username']
+            }
+        })
+    return jsonify({"logged_in": False})
 
 # Fallback Helper: Extract text from PDF using pdfplumber if pypdf is empty
 def extract_pdf_text_pdfplumber(path):
@@ -460,6 +564,10 @@ def extract_image_text_via_ai(filepath):
 # RAG Upload endpoint using modular vector_store.py
 @app.route('/api/upload-document', methods=['POST'])
 def upload_document():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Unauthorized. Please log in."}), 401
+        
     if 'document' not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
         
@@ -520,7 +628,8 @@ def upload_document():
         DOCUMENTS_STORE[doc_id] = {
             "filename": filename,
             "index_dir": index_dir,
-            "chunk_count": len(chunks)
+            "chunk_count": len(chunks),
+            "user_id": user_id
         }
         
         # Save to SQLite persistence
@@ -528,8 +637,8 @@ def upload_document():
             conn = sqlite3.connect("database.db")
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO documents (id, filename, index_dir, chunk_count) VALUES (?, ?, ?, ?)",
-                (doc_id, filename, index_dir, len(chunks))
+                "INSERT INTO documents (id, filename, index_dir, chunk_count, user_id) VALUES (?, ?, ?, ?, ?)",
+                (doc_id, filename, index_dir, len(chunks), user_id)
             )
             conn.commit()
             conn.close()
@@ -546,25 +655,170 @@ def upload_document():
         print(f"FAISS indexing error: {e}")
         return jsonify({"error": f"Failed to index document: {str(e)}"}), 500
 
+def extract_youtube_video_id(url):
+    pattern = r'(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})'
+    match = re.search(pattern, url)
+    return match.group(1) if match else None
+
+def get_youtube_transcript(video_id):
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        api = YouTubeTranscriptApi()
+        transcript_list = api.list(video_id)
+        
+        try:
+            transcript = transcript_list.find_transcript(['en'])
+        except Exception:
+            try:
+                transcript = next(iter(transcript_list))
+                if transcript.is_translatable:
+                    transcript = transcript.translate('en')
+                else:
+                    print("First transcript is not translatable.")
+                    return None
+            except Exception as e2:
+                print(f"No translatable transcript found: {e2}")
+                return None
+                
+        data = transcript.fetch()
+        text = " ".join([item.text for item in data])
+        return text
+    except Exception as e:
+        print(f"Error fetching YouTube transcript: {e}")
+        return None
+
+def generate_transcript_summary(transcript_text):
+    provider, key = get_llm_provider()
+    if not provider:
+        return "Error: No API Key configured. Please add an API Key in settings."
+        
+    prompt = (
+        "You are an expert study assistant. Summarize the following YouTube video transcript. "
+        "Provide a concise overall summary first, followed by a structured bullet-point list of the main technical points, "
+        "key concepts, and takeaways. Format it beautifully in Markdown.\n\n"
+        f"Transcript:\n{transcript_text[:15000]}"
+    )
+    
+    if provider == "gemini":
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            print(f"Gemini summary error: {e}")
+            return f"Error: {str(e)}"
+            
+    elif provider == "groq":
+        try:
+            from groq import Groq
+            client = Groq(api_key=key)
+            chat_completion = client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model="llama-3.3-70b-versatile",
+            )
+            return chat_completion.choices[0].message.content
+        except Exception as e:
+            print(f"Groq summary error: {e}")
+            return f"Error: {str(e)}"
+            
+    return "Unsupported LLM provider."
+
+@app.route('/api/summarize-youtube', methods=['POST'])
+def summarize_youtube():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Unauthorized. Please log in."}), 401
+        
+    data = request.get_json()
+    if not data or 'url' not in data:
+        return jsonify({"error": "YouTube URL is required"}), 400
+        
+    url = data['url']
+    video_id = extract_youtube_video_id(url)
+    if not video_id:
+        return jsonify({"error": "Invalid YouTube URL format"}), 400
+        
+    transcript_text = get_youtube_transcript(video_id)
+    if not transcript_text:
+        return jsonify({"error": "Could not retrieve transcript from YouTube video. Ensure it has captions/subtitles enabled."}), 400
+        
+    summary = generate_transcript_summary(transcript_text)
+    if not summary or summary.startswith("Error"):
+        return jsonify({"error": f"Failed to generate summary: {summary}"}), 500
+        
+    # Index the transcript in RAG so the student can chat with it
+    filename = f"YouTube_{video_id}"
+    doc_id = str(uuid.uuid4())
+    index_dir = os.path.join(app.config['UPLOAD_FOLDER'], f"faiss_index_{doc_id}")
+    
+    try:
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+        chunks = splitter.split_text(transcript_text)
+        
+        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        db = FAISS.from_texts(chunks, embeddings)
+        db.save_local(index_dir)
+        
+        DOCUMENTS_STORE[doc_id] = {
+            "filename": filename,
+            "index_dir": index_dir,
+            "chunk_count": len(chunks),
+            "user_id": user_id
+        }
+        
+        try:
+            conn = sqlite3.connect("database.db")
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO documents (id, filename, index_dir, chunk_count, user_id) VALUES (?, ?, ?, ?, ?)",
+                (doc_id, filename, index_dir, len(chunks), user_id)
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"Error persisting youtube doc to SQLite: {e}")
+            
+    except Exception as e:
+        print(f"Failed to index YouTube transcript: {e}")
+        
+    return jsonify({
+        "success": True,
+        "summary": summary,
+        "document_id": doc_id,
+        "filename": filename
+    })
+
 # Documents list fetcher
 @app.route('/api/documents', methods=['GET'])
 def get_all_documents():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Unauthorized. Please log in."}), 401
+        
     docs_list = []
     for k, v in DOCUMENTS_STORE.items():
-        docs_list.append({
-            "id": k,
-            "name": v["filename"],
-            "chunks": v["chunk_count"]
-        })
+        if v.get("user_id") == user_id:
+            docs_list.append({
+                "id": k,
+                "name": v["filename"],
+                "chunks": v["chunk_count"]
+            })
     return jsonify({"success": True, "documents": docs_list})
 
 # Study Goals APIs
 @app.route('/api/goals', methods=['GET'])
 def get_goals():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Unauthorized. Please log in."}), 401
+        
     try:
         conn = sqlite3.connect("database.db")
         cursor = conn.cursor()
-        cursor.execute("SELECT id, target, duration, hours, level, progress FROM study_plans")
+        cursor.execute("SELECT id, target, duration, hours, level, progress FROM study_plans WHERE user_id = ?", (user_id,))
         goals = []
         for row in cursor.fetchall():
             goals.append({
@@ -582,6 +836,10 @@ def get_goals():
 
 @app.route('/api/goals', methods=['POST'])
 def save_goal():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Unauthorized. Please log in."}), 401
+        
     data = request.json or {}
     target = data.get("target", "").strip()
     duration = data.get("duration", "").strip()
@@ -595,15 +853,15 @@ def save_goal():
     try:
         conn = sqlite3.connect("database.db")
         cursor = conn.cursor()
-        cursor.execute("SELECT id FROM study_plans WHERE target = ?", (target,))
+        cursor.execute("SELECT id FROM study_plans WHERE target = ? AND user_id = ?", (target, user_id))
         existing = cursor.fetchone()
         if existing:
             conn.close()
             return jsonify({"success": True, "message": "Goal already exists."})
             
         cursor.execute(
-            "INSERT INTO study_plans (target, duration, hours, level, plan_text, progress) VALUES (?, ?, ?, ?, ?, ?)",
-            (target, duration, hours, level, plan_text, 0)
+            "INSERT INTO study_plans (target, duration, hours, level, plan_text, progress, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (target, duration, hours, level, plan_text, 0, user_id)
         )
         conn.commit()
         conn.close()
@@ -613,6 +871,10 @@ def save_goal():
 
 @app.route('/api/goals/update', methods=['POST'])
 def update_goal_progress():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Unauthorized. Please log in."}), 401
+        
     data = request.json or {}
     target = data.get("target", "").strip()
     progress = data.get("progress", 0)
@@ -620,7 +882,7 @@ def update_goal_progress():
     try:
         conn = sqlite3.connect("database.db")
         cursor = conn.cursor()
-        cursor.execute("UPDATE study_plans SET progress = ? WHERE target = ?", (progress, target))
+        cursor.execute("UPDATE study_plans SET progress = ? WHERE target = ? AND user_id = ?", (progress, target, user_id))
         conn.commit()
         conn.close()
         return jsonify({"success": True})
@@ -630,6 +892,10 @@ def update_goal_progress():
 # RAG Query endpoint modified for index merging
 @app.route('/api/query-document', methods=['POST'])
 def query_document():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"error": "Unauthorized. Please log in."}), 401
+        
     data = request.json or {}
     doc_ids = data.get("document_ids", [])
     question = data.get("question", "").strip()
@@ -646,7 +912,7 @@ def query_document():
         
         merged_db = None
         for doc_id in doc_ids:
-            if doc_id in DOCUMENTS_STORE:
+            if doc_id in DOCUMENTS_STORE and DOCUMENTS_STORE[doc_id].get("user_id") == user_id:
                 index_dir = DOCUMENTS_STORE[doc_id]["index_dir"]
                 db = FAISS.load_local(index_dir, embeddings, allow_dangerous_deserialization=True)
                 if merged_db is None:

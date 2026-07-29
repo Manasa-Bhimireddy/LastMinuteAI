@@ -3,6 +3,7 @@
 // Global App State
 const state = {
   activeTab: 'dashboard',
+  currentUser: null,
   apiConfigured: false,
   apiProvider: 'none',
   resumeAnalysis: null,
@@ -63,19 +64,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Set up File Drag & Drop
   setupFileDropAreas();
   
-  // Verify API Key Configuration
-  checkApiKeyStatus();
+  // Verify user authentication state on launch
+  checkUserSession();
 
   // Bind Form Submit Handlers
   setupFormHandlers();
   
-  // Initialize dynamic views
-  updateDashboardViews();
-
-  // Load database items on startup
-  loadUploadedDocuments();
-  loadPinnedGoals();
-
   // Init Typing Effect
   initTypingEffect();
 });
@@ -780,6 +774,7 @@ async function pinPlanToDashboard(plan) {
 // C: Dashboard view sync
 function updateDashboardViews() {
   const goalsContainer = document.getElementById('dashboard-goals-list');
+  if (!goalsContainer) return;
   goalsContainer.innerHTML = '';
 
   if (state.pinnedGoals.length === 0) {
@@ -1455,3 +1450,240 @@ window.readBubbleText = function(button) {
   window.speechSynthesis.speak(utterance);
   showToast('Speaking...', 'success');
 };
+
+// 15. YouTube Video Summarizer
+async function summarizeYoutubeVideo() {
+  const urlInput = document.getElementById('yt-url-input');
+  const statusDiv = document.getElementById('yt-status');
+  if (!urlInput || !urlInput.value.trim()) {
+    showToast('Please enter a YouTube video URL.', 'warning');
+    return;
+  }
+
+  const url = urlInput.value.trim();
+  statusDiv.style.display = 'block';
+  statusDiv.innerText = 'Extracting transcript and generating summary... Please wait.';
+  statusDiv.style.color = 'var(--accent-primary)';
+
+  try {
+    const res = await fetch('/api/summarize-youtube', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url })
+    });
+    
+    const data = await res.json();
+    if (res.ok && data.success) {
+      statusDiv.innerText = 'Summarization complete!';
+      statusDiv.style.color = 'var(--success)';
+      
+      const contentEl = document.getElementById('yt-summary-content');
+      if (contentEl) {
+        let formatted = data.summary
+          .replace(/^### (.*$)/gim, '<h4 style="margin: 12px 0 6px 0; color: var(--accent-primary);">$1</h4>')
+          .replace(/^## (.*$)/gim, '<h3 style="margin: 16px 0 8px 0; color: var(--accent-secondary);">$1</h3>')
+          .replace(/^# (.*$)/gim, '<h2 style="margin: 20px 0 10px 0;">$1</h2>')
+          .replace(/^\s*\-\s*(.*$)/gim, '<li style="margin-left: 16px; margin-bottom: 6px; list-style-type: disc;">$1</li>')
+          .replace(/^\s*\*\s*(.*$)/gim, '<li style="margin-left: 16px; margin-bottom: 6px; list-style-type: disc;">$1</li>')
+          .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+          .replace(/\*(.*?)\*/g, '<em>$1</em>')
+          .replace(/\n/g, '<br>');
+        contentEl.innerHTML = formatted;
+      }
+      
+      document.getElementById('yt-summary-modal').style.display = 'flex';
+      urlInput.value = '';
+      
+      if (typeof fetchDocuments === 'function') {
+        fetchDocuments();
+      }
+      
+    } else {
+      statusDiv.innerText = `Error: ${data.error || 'Failed to summarize video'}`;
+      statusDiv.style.color = 'var(--danger)';
+      showToast(data.error || 'Failed to summarize video', 'danger');
+    }
+  } catch (err) {
+    console.error('YouTube summarizer error:', err);
+    statusDiv.innerText = 'Failed to connect to server.';
+    statusDiv.style.color = 'var(--danger)';
+    showToast('Failed to connect to server.', 'danger');
+  }
+}
+
+function closeYtModal() {
+  const modal = document.getElementById('yt-summary-modal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+}
+
+// ==================== AUTHENTICATION MODULE ====================
+let authMode = 'login'; // 'login' or 'register'
+
+function toggleAuthMode() {
+  const subtitle = document.getElementById('auth-subtitle');
+  const errorAlert = document.getElementById('auth-error');
+  const submitBtn = document.getElementById('auth-submit-btn');
+  const switchText = document.getElementById('auth-switch-text');
+  const switchLink = document.getElementById('auth-switch-link');
+  
+  errorAlert.style.display = 'none';
+  
+  if (authMode === 'login') {
+    authMode = 'register';
+    subtitle.textContent = 'Create a new account to save your study data';
+    submitBtn.querySelector('span').textContent = 'Sign Up';
+    switchText.textContent = 'Already have an account?';
+    switchLink.textContent = 'Log In';
+  } else {
+    authMode = 'login';
+    subtitle.textContent = 'Log in to access your learning portal';
+    submitBtn.querySelector('span').textContent = 'Log In';
+    switchText.textContent = 'New to LastMinute.AI?';
+    switchLink.textContent = 'Create an Account';
+  }
+}
+
+async function handleAuthSubmit(e) {
+  e.preventDefault();
+  const usernameInput = document.getElementById('auth-username');
+  const passwordInput = document.getElementById('auth-password');
+  const errorAlert = document.getElementById('auth-error');
+  const errorMsg = document.getElementById('auth-error-msg');
+  const submitBtn = document.getElementById('auth-submit-btn');
+  
+  const username = usernameInput.value.trim();
+  const password = passwordInput.value;
+  
+  if (!username || !password) return;
+  
+  // Set button state
+  const originalBtnHTML = submitBtn.innerHTML;
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = `<span>Processing...</span>`;
+  
+  const endpoint = authMode === 'login' ? '/api/login' : '/api/register';
+  
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    
+    const result = await response.json();
+    
+    if (!response.ok || result.error) {
+      throw new Error(result.error || 'Authentication failed');
+    }
+    
+    // Auth success
+    state.currentUser = result.user;
+    
+    // Hide auth screen
+    document.getElementById('auth-overlay').style.display = 'none';
+    
+    // Show profile boxes
+    showUserProfiles(result.user);
+    
+    // Clear inputs
+    usernameInput.value = '';
+    passwordInput.value = '';
+    
+    showToast(`Welcome back, ${result.user.username}!`, 'success');
+    
+    // Load user data
+    checkApiKeyStatus();
+    loadUploadedDocuments();
+    loadPinnedGoals();
+    
+  } catch (error) {
+    console.error('Auth error:', error);
+    errorMsg.textContent = error.message;
+    errorAlert.style.display = 'flex';
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = originalBtnHTML;
+  }
+}
+
+function showUserProfiles(user) {
+  const profileBox = document.getElementById('user-profile-box');
+  const topProfile = document.getElementById('top-navbar-user-profile');
+  
+  const username = user.username;
+  const avatarChar = username.charAt(0).toUpperCase();
+  
+  if (profileBox) {
+    document.getElementById('user-display-name').textContent = username;
+    document.getElementById('user-avatar-char').textContent = avatarChar;
+    profileBox.style.display = 'flex';
+  }
+  
+  if (topProfile) {
+    document.getElementById('top-navbar-username').textContent = username;
+    document.getElementById('top-navbar-avatar-char').textContent = avatarChar;
+    topProfile.style.display = 'flex';
+  }
+  
+  // Update header welcome subtitle dynamically
+  const headerSubtitle = document.getElementById('current-panel-subtitle');
+  if (headerSubtitle && state.activeTab === 'dashboard') {
+    headerSubtitle.textContent = `Welcome back, ${username}! Here is your learning progress.`;
+  }
+}
+
+async function checkUserSession() {
+  try {
+    const response = await fetch('/api/session');
+    const result = await response.json();
+    
+    if (result.logged_in) {
+      state.currentUser = result.user;
+      document.getElementById('auth-overlay').style.display = 'none';
+      showUserProfiles(result.user);
+      
+      // Load user details
+      checkApiKeyStatus();
+      loadUploadedDocuments();
+      loadPinnedGoals();
+    } else {
+      state.currentUser = null;
+      document.getElementById('auth-overlay').style.display = 'flex';
+    }
+  } catch (error) {
+    console.error('Error checking session:', error);
+    document.getElementById('auth-overlay').style.display = 'flex';
+  }
+}
+
+async function handleLogout() {
+  try {
+    const response = await fetch('/api/logout', { method: 'POST' });
+    if (response.ok) {
+      state.currentUser = null;
+      
+      // Reset UI elements
+      document.getElementById('auth-overlay').style.display = 'flex';
+      document.getElementById('user-profile-box').style.display = 'none';
+      document.getElementById('top-navbar-user-profile').style.display = 'none';
+      
+      // Clear local states
+      state.uploadedDocuments = [];
+      state.pinnedGoals = [];
+      state.chatbotHistory = [];
+      
+      // Refresh views
+      renderDocumentList();
+      updateDashboardViews();
+      
+      // Navigate to dashboard
+      switchTab('dashboard');
+      showToast('Logged out successfully', 'info');
+    }
+  } catch (error) {
+    console.error('Logout error:', error);
+    showToast('Logout failed', 'error');
+  }
+}

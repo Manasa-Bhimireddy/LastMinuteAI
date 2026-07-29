@@ -19,6 +19,46 @@
 </head>
 <body class="dark-theme">
 
+  <!-- Authentication Overlay Screen -->
+  <div id="auth-overlay" class="modal-overlay" style="display: flex; position: fixed; z-index: 10000; background: rgba(8, 10, 15, 0.92); backdrop-filter: blur(20px); top: 0; left: 0; right: 0; bottom: 0; align-items: center; justify-content: center;">
+    <div class="glass-card" style="width: 100%; max-width: 400px; padding: 36px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 30px 70px rgba(0,0,0,0.8), 0 0 40px rgba(6, 182, 212, 0.15);">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <div style="background: rgba(6, 182, 212, 0.1); width: 60px; height: 60px; border-radius: 14px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; border: 1px solid rgba(6, 182, 212, 0.25);">
+          <i data-lucide="graduation-cap" style="width: 30px; height: 30px; color: var(--accent-primary);"></i>
+        </div>
+        <h2 style="font-family: var(--font-display); margin: 0 0 6px 0; font-size: 1.7rem; font-weight: 700; color: #fff;">LastMinute <span style="color: var(--accent-primary);">.AI</span></h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;" id="auth-subtitle">Log in to access your learning portal</p>
+      </div>
+
+      <!-- Error message box -->
+      <div id="auth-error" style="display: none; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 8px; padding: 12px; margin-bottom: 16px; font-size: 0.8rem; color: #f87171; align-items: center; gap: 8px;">
+        <i data-lucide="alert-triangle" style="width: 16px; height: 16px; flex-shrink: 0;"></i>
+        <span id="auth-error-msg" style="flex: 1;">Error message</span>
+      </div>
+
+      <!-- Form -->
+      <form id="auth-form" onsubmit="handleAuthSubmit(event)">
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px; display: block;">Username</label>
+          <input type="text" id="auth-username" required style="width: 100%; padding: 10px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); color: #fff; font-size: 0.85rem;" placeholder="Enter username">
+        </div>
+        <div class="form-group" style="margin-bottom: 20px;">
+          <label style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px; display: block;">Password</label>
+          <input type="password" id="auth-password" required style="width: 100%; padding: 10px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); color: #fff; font-size: 0.85rem;" placeholder="••••••••">
+        </div>
+
+        <button type="submit" id="auth-submit-btn" class="btn btn-primary" style="width: 100%; padding: 10px; font-weight: 600; border-radius: 6px; justify-content: center; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <span>Log In</span><i data-lucide="arrow-right" style="width: 16px; height: 16px;"></i>
+        </button>
+      </form>
+
+      <div style="text-align: center; margin-top: 20px; font-size: 0.8rem; color: var(--text-muted);">
+        <span id="auth-switch-text">New to LastMinute.AI?</span> 
+        <a href="javascript:void(0)" onclick="toggleAuthMode()" id="auth-switch-link" style="color: var(--accent-primary); font-weight: 500; text-decoration: none; margin-left: 4px;">Create an Account</a>
+      </div>
+    </div>
+  </div>
+
   <!-- Floating Background Blobs -->
   <div class="blob-bg-container">
     <div class="blob blob-indigo"></div>
@@ -63,7 +103,14 @@
         </button>
       </nav>
 
-      <div class="sidebar-footer">
+      <div class="sidebar-footer" style="padding: 16px; border-top: 1px solid rgba(255, 255, 255, 0.05); display: flex; flex-direction: column; gap: 12px;">
+        <div id="user-profile-box" style="display: none; align-items: center; gap: 10px; background: rgba(255, 255, 255, 0.02); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.05); flex-shrink: 0;">
+          <div style="background: var(--accent-primary); width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.8rem; color: #080a0f;" id="user-avatar-char">U</div>
+          <div style="flex: 1; overflow: hidden; text-align: left;">
+            <div style="font-size: 0.8rem; font-weight: 600; color: #fff; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;" id="user-display-name">Username</div>
+            <a href="javascript:void(0)" onclick="handleLogout()" style="font-size: 0.7rem; color: #ef4444; text-decoration: none; display: flex; align-items: center; gap: 4px; margin-top: 2px;"><i data-lucide="log-out" style="width: 10px; height: 10px;"></i>Logout</a>
+          </div>
+        </div>
         <div class="api-status-badge missing" id="api-status-indicator">
           <i data-lucide="alert-circle" id="api-status-icon"></i>
           <span id="api-status-text">LLM Offline</span>
@@ -79,9 +126,9 @@
           <h1 id="current-panel-title">Dashboard</h1>
           <p id="current-panel-subtitle">Welcome back, Student! Here is your learning progress.</p>
         </div>
-        <div class="user-profile">
-          <div class="avatar">S</div>
-          <span class="user-name">Guest Student</span>
+        <div class="user-profile" id="top-navbar-user-profile" style="display: none; align-items: center; gap: 8px;">
+          <div class="avatar" id="top-navbar-avatar-char">S</div>
+          <span class="user-name" id="top-navbar-username">Guest Student</span>
         </div>
       </header>
 
@@ -134,48 +181,80 @@
 
           <div class="dashboard-grid">
             <div class="glass-card grid-col-2">
-              <h3>Quick Actions</h3>
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+                <h3 style="margin: 0;">Platform AI Feature Suite</h3>
+                <span class="welcome-tag" style="padding: 4px 8px; font-size: 0.7rem;">6 Core Modules</span>
+              </div>
               <div class="quick-actions-list">
+                <!-- 1. ATS Radar -->
                 <div class="action-item" onclick="switchTab('resume-gap')">
-                  <div class="action-icon"><i data-lucide="file-check-2"></i></div>
-                  <div class="action-info">
-                    <h4>Analyze Skill Gap</h4>
-                    <p>Compare resume with job descriptions to discover missing skills.</p>
+                  <div class="action-icon" style="background: rgba(6, 182, 212, 0.1); color: var(--accent-primary);"><i data-lucide="file-check-2"></i></div>
+                  <div class="action-info" style="flex: 1;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                      <h4 style="margin: 0; font-size: 0.95rem;">ATS Skill Gap Radar</h4>
+                      <span style="font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; background: rgba(6, 182, 212, 0.1); color: var(--accent-primary); padding: 2px 6px; border-radius: 4px;">ATS & Chart.js</span>
+                    </div>
+                    <p style="font-size: 0.8rem; margin: 0; line-height: 1.4; color: var(--text-secondary);">Scans resumes against job specs and visualizes skill gaps on a Chart.js radar chart.</p>
                   </div>
                 </div>
+                <!-- 2. RAG Document QA -->
                 <div class="action-item" onclick="switchTab('document-qa')">
-                  <div class="action-icon"><i data-lucide="text-quote"></i></div>
-                  <div class="action-info">
-                    <h4>Upload Study Notes</h4>
-                    <p>Ask questions directly related to your class documents using AI RAG.</p>
+                  <div class="action-icon" style="background: rgba(16, 185, 129, 0.1); color: var(--success);"><i data-lucide="text-quote"></i></div>
+                  <div class="action-info" style="flex: 1;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                      <h4 style="margin: 0; font-size: 0.95rem;">Contextual Document QA</h4>
+                      <span style="font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; background: rgba(16, 185, 129, 0.1); color: var(--success); padding: 2px 6px; border-radius: 4px;">RAG & FAISS</span>
+                    </div>
+                    <p style="font-size: 0.8rem; margin: 0; line-height: 1.4; color: var(--text-secondary);">Upload slide decks or textbooks to index them in a local FAISS database for contextual search.</p>
                   </div>
                 </div>
-                <div class="action-item" onclick="switchTab('study-assistant')">
-                  <div class="action-icon"><i data-lucide="calendar-days"></i></div>
-                  <div class="action-info">
-                    <h4>Generate Study Plan</h4>
-                    <p>Design a structured roadmap for your exams or desired career roles.</p>
+                <!-- 3. YouTube Summarizer -->
+                <div class="action-item" onclick="switchTab('document-qa')">
+                  <div class="action-icon" style="background: rgba(239, 68, 68, 0.1); color: #ef4444;"><i data-lucide="youtube"></i></div>
+                  <div class="action-info" style="flex: 1;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                      <h4 style="margin: 0; font-size: 0.95rem;">YouTube Video Summarizer</h4>
+                      <span style="font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; background: rgba(239, 68, 68, 0.1); color: #ef4444; padding: 2px 6px; border-radius: 4px;">Auto Transcript</span>
+                    </div>
+                    <p style="font-size: 0.8rem; margin: 0; line-height: 1.4; color: var(--text-secondary);">Paste video links to extract captions, generate bulleted takeaways, and auto-index into RAG.</p>
                   </div>
                 </div>
+                <!-- 4. Speech / Voice -->
                 <div class="action-item" onclick="switchTab('tutor-chatbot')">
-                  <div class="action-icon"><i data-lucide="bot"></i></div>
-                  <div class="action-info">
-                    <h4>Ask AI Academic Tutor</h4>
-                    <p>Instant answers to homework, concepts, or programming challenges.</p>
+                  <div class="action-icon" style="background: rgba(168, 85, 247, 0.1); color: var(--accent-secondary);"><i data-lucide="mic"></i></div>
+                  <div class="action-info" style="flex: 1;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                      <h4 style="margin: 0; font-size: 0.95rem;">Voice-Activated Study</h4>
+                      <span style="font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; background: rgba(168, 85, 247, 0.1); color: var(--accent-secondary); padding: 2px 6px; border-radius: 4px;">STT & TTS</span>
+                    </div>
+                    <p style="font-size: 0.8rem; margin: 0; line-height: 1.4; color: var(--text-secondary);">Take dictation via microphone input (STT) and listen to explanations read aloud (TTS).</p>
+                  </div>
+                </div>
+                <!-- 5. Study Roadmap -->
+                <div class="action-item" onclick="switchTab('study-assistant')">
+                  <div class="action-icon" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6;"><i data-lucide="calendar-days"></i></div>
+                  <div class="action-info" style="flex: 1;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                      <h4 style="margin: 0; font-size: 0.95rem;">Personalized Study Plans</h4>
+                      <span style="font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; background: rgba(59, 130, 246, 0.1); color: #3b82f6; padding: 2px 6px; border-radius: 4px;">Curriculum AI</span>
+                    </div>
+                    <p style="font-size: 0.8rem; margin: 0; line-height: 1.4; color: var(--text-secondary);">Draft weekly schedules for targeted concepts, check off milestones, and save goals persistently.</p>
+                  </div>
+                </div>
+                <!-- 6. Active Recall quizzes -->
+                <div class="action-item" onclick="switchTab('study-assistant')">
+                  <div class="action-icon" style="background: rgba(234, 179, 8, 0.1); color: #eab308;"><i data-lucide="award"></i></div>
+                  <div class="action-info" style="flex: 1;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                      <h4 style="margin: 0; font-size: 0.95rem;">Assessment Generators</h4>
+                      <span style="font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; background: rgba(234, 179, 8, 0.1); color: #eab308; padding: 2px 6px; border-radius: 4px;">Quiz & Cards</span>
+                    </div>
+                    <p style="font-size: 0.8rem; margin: 0; line-height: 1.4; color: var(--text-secondary);">Generate custom multiple-choice quizzes and flashcards automatically based on your study topics.</p>
                   </div>
                 </div>
               </div>
             </div>
             
-            <div class="glass-card">
-              <h3>Active Target Goals</h3>
-              <div class="target-goals-list" id="dashboard-goals-list">
-                <div class="empty-state">
-                  <i data-lucide="plus-circle" class="empty-icon"></i>
-                  <p>No goals set. Generate a Study Plan to start tracking!</p>
-                </div>
-              </div>
-            </div>
           </div>
         </section>
 
@@ -450,6 +529,15 @@
                 <div id="uploading-doc-spinner" class="spinner" style="display: none; margin: 10px auto;"></div>
               </div>
               
+              <div class="youtube-summarizer-section" style="margin-bottom: 20px; padding: 14px; background: rgba(255, 255, 255, 0.015); border: 1px solid rgba(255, 255, 255, 0.04); border-radius: 8px;">
+                <h5 style="margin-bottom: 8px; font-family: var(--font-display); font-size: 0.85rem; display: flex; align-items: center; gap: 6px; color: var(--text-primary);"><i data-lucide="video" style="width: 16px; height: 16px; color: #ef4444;"></i>Summarize YouTube Video</h5>
+                <div class="input-group" style="display: flex; gap: 8px;">
+                  <input type="text" id="yt-url-input" placeholder="Paste YouTube Video Link..." class="form-control" style="flex: 1; padding: 6px 10px; background: rgba(0, 0, 0, 0.2); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 4px; color: #fff; font-size: 0.8rem;" />
+                  <button class="btn btn-primary" onclick="summarizeYoutubeVideo()" style="padding: 6px 12px; border-radius: 4px; font-size: 0.8rem; background: var(--accent-primary); border: none; color: #fff; cursor: pointer; font-weight: 600;">Summarize</button>
+                </div>
+                <div id="yt-status" style="margin-top: 6px; font-size: 0.75rem; color: var(--text-secondary); display: none;"></div>
+              </div>
+              
               <div class="active-documents-list-section">
                 <h5>Uploaded Study Files</h5>
                 <div class="docs-list" id="uploaded-docs-list">
@@ -597,6 +685,22 @@
 
       </div>
     </main>
+  </div>
+
+  <!-- YouTube Summary Modal -->
+  <div id="yt-summary-modal" class="modal-overlay" style="display: none;">
+    <div class="glass-card modal-card" style="max-width: 600px; width: 90%; max-height: 80vh; display: flex; flex-direction: column; padding: 24px;">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 12px; flex-shrink: 0;">
+        <h3 style="display: flex; align-items: center; gap: 8px; margin: 0; font-family: var(--font-display);"><i data-lucide="youtube" style="color: #ef4444; width: 22px; height: 22px;"></i>Video Summary</h3>
+        <button class="btn-close" onclick="closeYtModal()" style="background: none; border: none; color: #fff; font-size: 1.5rem; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px;">&times;</button>
+      </div>
+      <div class="modal-body markdown-content" id="yt-summary-content" style="font-size: 0.9rem; line-height: 1.6; color: var(--text-primary); overflow-y: auto; flex: 1; padding-right: 8px;">
+        <!-- Summary will be injected here -->
+      </div>
+      <div class="modal-footer" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 12px; flex-shrink: 0;">
+        <button class="btn btn-secondary" onclick="closeYtModal()" style="padding: 8px 16px; border-radius: 6px; font-size: 0.85rem; cursor: pointer;">Close</button>
+      </div>
+    </div>
   </div>
 
   <!-- Toast notification container -->
